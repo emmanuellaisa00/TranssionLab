@@ -8,24 +8,67 @@ namespace TranssionLab.Firmware;
 
 public static class HashAndBinaryHelpers
 {
-    private static readonly HashSet<string> ProtectedPartitionNames = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ProtectedNvAndSecurityNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "nvram", "nvdata", "nvcfg", "persist", "proinfo", "protect1", "protect2",
         "seccfg", "otp", "preloader", "prodnv", "miscdata", "phasecheck",
-        "l_fixnv1", "l_fixnv2", "l_runtimenv1", "fsg", "modemst1", "modemst2"
+        "l_fixnv1", "l_fixnv2", "l_runtimenv1", "fsg", "modemst1", "modemst2", "frp"
     };
+
+    private static readonly HashSet<string> BootChainCriticalNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "preloader", "splloader", "uboot", "lk", "lk2", "bootloader",
+        "tee", "tee1", "tee2", "gz", "gz1", "gz2", "spmfw", "sspm",
+        "mcupm", "dpm", "pi_img", "scp", "scp1", "scp2", "sbl1", "xbl", "abl"
+    };
+
+    public static string StripSlotSuffix(string partitionName)
+    {
+        if (string.IsNullOrWhiteSpace(partitionName))
+            return string.Empty;
+        var trimmed = partitionName.Trim();
+        if (trimmed.EndsWith("_a", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.EndsWith("_b", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed[..^2];
+        }
+        return trimmed;
+    }
+
+    public static bool IsAntiTheftFrpPartition(string partitionName)
+    {
+        var baseName = StripSlotSuffix(partitionName);
+        return string.Equals(baseName, "frp", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(baseName, "persistent", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(baseName, "config", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsBootChainCriticalPartition(string partitionName)
+    {
+        var baseName = StripSlotSuffix(partitionName);
+        return BootChainCriticalNames.Contains(baseName);
+    }
 
     public static bool IsProtectedPartition(string partitionName)
     {
         if (string.IsNullOrWhiteSpace(partitionName))
             return false;
-        var baseName = partitionName.Trim();
-        if (baseName.EndsWith("_a", StringComparison.OrdinalIgnoreCase) ||
-            baseName.EndsWith("_b", StringComparison.OrdinalIgnoreCase))
-        {
-            baseName = baseName[..^2];
-        }
-        return ProtectedPartitionNames.Contains(baseName);
+        var baseName = StripSlotSuffix(partitionName);
+        return ProtectedNvAndSecurityNames.Contains(baseName);
+    }
+
+    public static string FormatBytesHuman(long? bytes)
+    {
+        if (!bytes.HasValue || bytes.Value < 0)
+            return "Unknown";
+        double b = bytes.Value;
+        if (b >= 1024d * 1024 * 1024)
+            return $"{b / (1024d * 1024 * 1024):F2} GiB";
+        if (b >= 1024d * 1024)
+            return $"{b / (1024d * 1024):F2} MiB";
+        if (b >= 1024d)
+            return $"{b / 1024d:F1} KiB";
+        return $"{bytes.Value} B";
     }
 
     public static async Task<(string Sha256Hex, string Crc32Hex)> ComputeHashesAsync(
@@ -58,7 +101,7 @@ public static class HashAndBinaryHelpers
     public static (FirmwareFormatKind Kind, string Summary) SniffStreamMagic(Stream stream, string fileNameHint)
     {
         var startPos = stream.CanSeek ? stream.Position : 0;
-        Span<byte> header = stackalloc byte[4096];
+        Span<byte> header = stackalloc byte[8192];
         int read = stream.Read(header);
         if (stream.CanSeek)
             stream.Position = startPos;
@@ -73,6 +116,12 @@ public static class HashAndBinaryHelpers
 
             if (be32 == 0x43724155) // "CrAU"
                 return (FirmwareFormatKind.AndroidPayloadBin, "Android OTA CrAU Payload");
+
+            if (le32 == 0x616C4467) // LP_METADATA_GEOMETRY_MAGIC at offset 0
+                return (FirmwareFormatKind.AndroidSuperImage, "Android Dynamic Super Image (LpMetadata)");
+
+            if (read >= 0x1004 && BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(0x1000, 4)) == 0x616C4467)
+                return (FirmwareFormatKind.AndroidSuperImage, "Android Dynamic Super Image (LpMetadata @ 0x1000)");
 
             if (header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04)
                 return (FirmwareFormatKind.ZipArchive, "ZIP Container");
@@ -96,7 +145,6 @@ public static class HashAndBinaryHelpers
         if (read >= 265 && Encoding.ASCII.GetString(header.Slice(257, 5)) == "ustar")
             return (FirmwareFormatKind.TarArchive, "POSIX USTAR Archive");
 
-        // Check Unisoc PAC header UTF-16LE version ("BP_R")
         if (read >= 64)
         {
             var utf16Prefix = Encoding.Unicode.GetString(header[..16]).TrimEnd('\0');
@@ -104,7 +152,6 @@ public static class HashAndBinaryHelpers
                 return (FirmwareFormatKind.UnisocPacContainer, $"Unisoc PAC Container ({utf16Prefix})");
         }
 
-        // Check inner raw filesystem magics
         if (read >= 0x43A)
         {
             ushort ext4Magic = BinaryPrimitives.ReadUInt16LittleEndian(header.Slice(0x438, 2));
@@ -120,7 +167,6 @@ public static class HashAndBinaryHelpers
                 return (FirmwareFormatKind.RawPartitionImage, "Raw F2FS Flash-Friendly Filesystem Image");
         }
 
-        // Check text-based scatter files
         if (read >= 16)
         {
             var textHead = Encoding.UTF8.GetString(header[..Math.Min(read, 1024)]);

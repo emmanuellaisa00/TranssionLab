@@ -41,6 +41,12 @@ public interface IAdbProvider
     Task<IReadOnlyDictionary<string, string>> GetDevicePropertiesAsync(string serial, CancellationToken ct = default);
     Task<string> CaptureBatterySummaryAsync(string serial, CancellationToken ct = default);
     Task<string> CaptureStorageSummaryAsync(string serial, CancellationToken ct = default);
+    Task<IReadOnlyList<AdbBlockPartitionEntry>> EnumerateBlockPartitionsAsync(string serial, CancellationToken ct = default);
+    Task<(CommandExecutionResult Result, long BytesRead, string? Sha256Hex)> ReadbackPartitionToFileAsync(
+        string serial,
+        string blockNodePath,
+        string localDestinationPath,
+        CancellationToken ct = default);
     Task<CommandExecutionResult> RebootAsync(string serial, string targetMode, CancellationToken ct = default);
     Task<CommandExecutionResult> SideloadPackageAsync(string serial, string otaZipPath, CancellationToken ct = default);
 }
@@ -83,6 +89,17 @@ public interface IFastbootProvider
     Task<CommandExecutionResult> SetActiveSlotAsync(string serial, string slotLetter, CancellationToken ct = default);
     Task<CommandExecutionResult> RebootAsync(string serial, string targetMode, CancellationToken ct = default);
     Task<CommandExecutionResult> FlashPartitionAsync(string serial, string partitionName, string imagePath, CancellationToken ct = default);
+    Task<CommandExecutionResult> FlashVbmetaAsync(
+        string serial,
+        string partitionName,
+        string vbmetaImagePath,
+        bool disableVerity,
+        bool disableVerification,
+        CancellationToken ct = default);
+    Task<CommandExecutionResult> CreateLogicalPartitionAsync(string serial, string partitionName, long sizeBytes, CancellationToken ct = default);
+    Task<CommandExecutionResult> ResizeLogicalPartitionAsync(string serial, string partitionName, long newSizeBytes, CancellationToken ct = default);
+    Task<CommandExecutionResult> DeleteLogicalPartitionAsync(string serial, string partitionName, CancellationToken ct = default);
+    Task<CommandExecutionResult> ErasePartitionAsync(string serial, string partitionName, CancellationToken ct = default);
     Task<CommandExecutionResult> ExecuteVerifiedUnlockCommandAsync(string serial, bool useLegacyOemCommand, CancellationToken ct = default);
 }
 
@@ -190,6 +207,7 @@ public interface IDeviceProfileRepository
     DeviceProfile? GetById(string profileId);
     DeviceProfile? MatchVerifiedProfile(string? manufacturer, string? modelCode, string? codename, string? buildFingerprint);
     Task<DeviceProfile> ImportProfileFromFileAsync(string jsonFilePath, CancellationToken ct = default);
+    Task<DeviceProfile> SaveOrPromoteProfileAsync(DeviceProfile profile, CancellationToken ct = default);
     IReadOnlyList<string> ValidateProfile(DeviceProfile profile);
 }
 
@@ -242,6 +260,60 @@ public interface IFirmwareFormatRegistry
     FirmwareFormatKind DetectFormat(string filePath);
     Task<FirmwareInspectionResult> InspectAsync(string filePath, CancellationToken ct = default);
     Task<string> ExtractArchiveEntryAsync(string packagePath, string entryName, string destinationDir, CancellationToken ct = default);
+    Task<string> ConvertSparseImageToRawAsync(string sparseImagePath, string outputRawImagePath, CancellationToken ct = default);
+}
+
+public interface IPartitionManager
+{
+    Task<DevicePartitionTableSnapshot> ScanDevicePartitionsAsync(
+        ConnectedDeviceSnapshot device,
+        CancellationToken ct = default);
+
+    Task<string> ExportPartitionTableJsonAsync(
+        DevicePartitionTableSnapshot snapshot,
+        string outputFilePath,
+        CancellationToken ct = default);
+
+    Task<PartitionModificationResult> CreateLogicalPartitionAsync(
+        ConnectedDeviceSnapshot device,
+        string partitionName,
+        long sizeBytes,
+        string confirmationText,
+        CancellationToken ct = default);
+
+    Task<PartitionModificationResult> ResizeLogicalPartitionAsync(
+        ConnectedDeviceSnapshot device,
+        string partitionName,
+        long newSizeBytes,
+        string confirmationText,
+        CancellationToken ct = default);
+
+    Task<PartitionModificationResult> DeleteLogicalPartitionAsync(
+        ConnectedDeviceSnapshot device,
+        string partitionName,
+        string confirmationText,
+        CancellationToken ct = default);
+
+    Task<PartitionModificationResult> ErasePartitionAsync(
+        ConnectedDeviceSnapshot device,
+        string partitionName,
+        string confirmationText,
+        CancellationToken ct = default);
+
+    Task<PartitionModificationResult> BackupPartitionViaAdbAsync(
+        ConnectedDeviceSnapshot device,
+        DevicePartitionEntry partition,
+        string outputDirectory,
+        CancellationToken ct = default);
+
+    Task<PartitionModificationResult> FlashVbmetaWithPolicyAsync(
+        ConnectedDeviceSnapshot device,
+        string partitionName,
+        string vbmetaImagePath,
+        bool disableVerity,
+        bool disableVerification,
+        string confirmationText,
+        CancellationToken ct = default);
 }
 
 public interface IBootloaderManager

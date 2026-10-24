@@ -95,17 +95,18 @@ public sealed class MainShellViewModel : ObservableObject
         BootloaderManagerViewModel p10,
         FirmwareExplorerViewModel p11,
         RomStudioViewModel p12,
-        FlashManagerViewModel p13,
-        DeviceProfilesViewModel p14,
-        OperationHistoryViewModel p15,
-        LiveLogsViewModel p16,
-        SettingsViewModel p17,
-        DocumentationAboutViewModel p18)
+        PartitionManagerViewModel p13,
+        FlashManagerViewModel p14,
+        DeviceProfilesViewModel p15,
+        OperationHistoryViewModel p16,
+        LiveLogsViewModel p17,
+        SettingsViewModel p18,
+        DocumentationAboutViewModel p19)
     {
         _discovery = discovery;
         _logger = logger;
 
-        PageViewModelBase[] allPages = [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18];
+        PageViewModelBase[] allPages = [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19];
         foreach (var page in allPages.OrderBy(p => p.PageNumber))
         {
             Pages.Add(page);
@@ -121,9 +122,17 @@ public sealed class MainShellViewModel : ObservableObject
         NavigateToPageCommand = new RelayCommand(param =>
         {
             if (param is PageViewModelBase target)
+            {
                 CurrentPage = target;
+            }
             else if (param is int num && Pages.FirstOrDefault(p => p.PageNumber == num) is { } byNum)
+            {
                 CurrentPage = byNum;
+            }
+            else if (param is string numStr && int.TryParse(numStr, out var parsed) && Pages.FirstOrDefault(p => p.PageNumber == parsed) is { } byStr)
+            {
+                CurrentPage = byStr;
+            }
         });
 
         _discovery.InventoryChanged += (_, _) => SyncDevicePicker();
@@ -191,8 +200,9 @@ public static class ServiceRegistration
         services.AddSingleton<RomStudioService>();
         services.AddSingleton<IBootloaderManager, BootloaderManager>();
         services.AddSingleton<IFlashManager, FlashManager>();
+        services.AddSingleton<IPartitionManager, PartitionManager>();
 
-        // Register all 18 Page ViewModels + Shell
+        // Register all 19 Page ViewModels + Shell
         services.AddSingleton<DashboardViewModel>();
         services.AddSingleton<ConnectionManagerViewModel>();
         services.AddSingleton<DeviceExplorerViewModel>();
@@ -203,9 +213,10 @@ public static class ServiceRegistration
         services.AddSingleton<SpdUnisocToolsViewModel>();
         services.AddSingleton<DiagDiagnosticsViewModel>();
         services.AddSingleton<BootloaderManagerViewModel>();
+        services.AddSingleton<FlashManagerViewModel>();
         services.AddSingleton<FirmwareExplorerViewModel>();
         services.AddSingleton<RomStudioViewModel>();
-        services.AddSingleton<FlashManagerViewModel>();
+        services.AddSingleton<PartitionManagerViewModel>();
         services.AddSingleton<DeviceProfilesViewModel>();
         services.AddSingleton<OperationHistoryViewModel>();
         services.AddSingleton<LiveLogsViewModel>();

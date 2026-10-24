@@ -143,9 +143,9 @@
       <Border Grid.Row="3" Background="#0F1623" BorderBrush="{StaticResource SubtleBorderBrush}" BorderThickness="0,1,0,0" Padding="18,7">
         <DockPanel>
           <Button DockPanel.Dock="Right"
-                  Content="Open Live Logs (#16)"
+                  Content="Open Live Logs (#17)"
                   Command="{Binding NavigateToPageCommand}"
-                  CommandParameter="16"
+                  CommandParameter="17"
                   Style="{StaticResource SecondaryButtonStyle}"
                   Padding="10,3"
                   FontSize="11" />

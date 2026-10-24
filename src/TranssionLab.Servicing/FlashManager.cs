@@ -153,6 +153,7 @@ public sealed class FlashManager : IFlashManager
             if (!inspection.IsFormatSupported ||
                 inspection.PackageFormat is not (
                     FirmwareFormatKind.AndroidSparseImage or
+                    FirmwareFormatKind.AndroidSuperImage or
                     FirmwareFormatKind.AndroidBootImage or
                     FirmwareFormatKind.AndroidVendorBootImage or
                     FirmwareFormatKind.AndroidVbmetaImage or

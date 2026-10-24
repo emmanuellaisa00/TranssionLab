@@ -144,7 +144,18 @@ public enum FirmwareFormatKind
     AndroidBootImage = 10,
     AndroidVendorBootImage = 11,
     AndroidVbmetaImage = 12,
-    RawPartitionImage = 13
+    RawPartitionImage = 13,
+    AndroidSuperImage = 14
+}
+
+public enum PartitionAccessPolicy
+{
+    SafeFlashable = 0,
+    LogicalSuperRequiresFastbootd = 1,
+    UserdataExplicitEraseOnly = 2,
+    ProtectedNvramOrCalibrationBlocked = 3,
+    BootChainCriticalBlocked = 4,
+    AntiTheftFrpBlocked = 5
 }
 
 public enum LogSeverity

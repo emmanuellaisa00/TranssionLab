@@ -98,6 +98,7 @@ public sealed record FirmwareInspectionResult
     public PayloadManifestInfo? PayloadInfo { get; init; }
     public UnisocPacHeaderInfo? PacInfo { get; init; }
     public MediaTekScatterInfo? ScatterInfo { get; init; }
+    public SuperMetadataInfo? SuperInfo { get; init; }
     public IReadOnlyList<string> CompatibleProfileIds { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> ParsingWarnings { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> MissingDependencies { get; init; } = Array.Empty<string>();

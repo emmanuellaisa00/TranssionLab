@@ -179,6 +179,88 @@ public sealed class OperationRegistry : IOperationRegistry
             },
             new OperationDescriptor
             {
+                OperationId = "partition.inspect_table",
+                DisplayName = "Inspect Live GPT & Dynamic Super Partition Table",
+                Category = "Partition",
+                Description = "Enumerates physical and logical dynamic partitions, capacities, slot suffixes, and safety policies across Fastboot, Fastbootd, ADB, or Recovery.",
+                RequiredConnectionModes =
+                [
+                    ConnectionMode.FastbootBootloader,
+                    ConnectionMode.FastbootdUserspace,
+                    ConnectionMode.AdbAuthorized,
+                    ConnectionMode.Recovery
+                ],
+                RequiresVerifiedDeviceProfile = false,
+                RequiredAuthorization = AuthorizationRequirement.None,
+                MinAndroidApiOrVersion = 8,
+                MaxAndroidVersion = 16,
+                RequiredFirmware = FirmwareRequirement.None,
+                ModifiesDeviceState = false,
+                MayEraseUserData = false,
+                IsDestructive = false,
+                SupportsSafeCancellation = true,
+                VerificationMethod = "Cross-checks fastboot partition-size/is-logical or /dev/block/by-name nodes.",
+                KnownLimitations = ["Locked retail ADB shells restrict raw block sizes under SELinux unless running in Recovery or debuggable shell."]
+            },
+            new OperationDescriptor
+            {
+                OperationId = "partition.manage_logical_super",
+                DisplayName = "Manage Dynamic Logical Partitions in Super (Create / Resize / Delete)",
+                Category = "Partition",
+                Description = "Creates, resizes, or deletes dynamic logical sub-partitions inside super (e.g. system_a, product_a, tr_mi_a) in Userspace Fastbootd.",
+                RequiredConnectionModes = [ConnectionMode.FastbootdUserspace],
+                RequiresVerifiedDeviceProfile = false,
+                RequiredAuthorization = AuthorizationRequirement.BootloaderUnlocked,
+                MinAndroidApiOrVersion = 10,
+                MaxAndroidVersion = 16,
+                RequiredFirmware = FirmwareRequirement.None,
+                ModifiesDeviceState = true,
+                MayEraseUserData = false,
+                IsDestructive = true,
+                SupportsSafeCancellation = false,
+                VerificationMethod = "Re-queries fastboot getvar is-logical:<name> and partition-size:<name> after modification.",
+                KnownLimitations = ["Strictly requires Userspace Fastbootd (is-userspace: yes) and an unlocked bootloader."]
+            },
+            new OperationDescriptor
+            {
+                OperationId = "partition.erase_safe",
+                DisplayName = "Controlled Partition Erase (Cache / Metadata / Explicit Userdata)",
+                Category = "Partition",
+                Description = "Executes controlled fastboot erase on permitted partitions while permanently blocking FRP, NVRAM/calibration, and boot-chain partitions.",
+                RequiredConnectionModes = [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+                RequiresVerifiedDeviceProfile = false,
+                RequiredAuthorization = AuthorizationRequirement.BootloaderUnlocked,
+                MinAndroidApiOrVersion = 9,
+                MaxAndroidVersion = 16,
+                RequiredFirmware = FirmwareRequirement.None,
+                ModifiesDeviceState = true,
+                MayEraseUserData = true,
+                IsDestructive = true,
+                SupportsSafeCancellation = false,
+                VerificationMethod = "Verifies fastboot OKAY status and target responsiveness.",
+                KnownLimitations = ["Erasing frp, nvram, nvdata, persist, proinfo, preloader, or lk is permanently prohibited."]
+            },
+            new OperationDescriptor
+            {
+                OperationId = "partition.adb_readback",
+                DisplayName = "Authorized Partition Block Readback / Backup (.img)",
+                Category = "Partition",
+                Description = "Streams unprotected partition block nodes to a local .img backup with SHA-256 verification when shell permissions allow (Recovery / authorized root).",
+                RequiredConnectionModes = [ConnectionMode.AdbAuthorized, ConnectionMode.Recovery],
+                RequiresVerifiedDeviceProfile = false,
+                RequiredAuthorization = AuthorizationRequirement.None,
+                MinAndroidApiOrVersion = 8,
+                MaxAndroidVersion = 16,
+                RequiredFirmware = FirmwareRequirement.None,
+                ModifiesDeviceState = false,
+                MayEraseUserData = false,
+                IsDestructive = false,
+                SupportsSafeCancellation = true,
+                VerificationMethod = "Computes SHA-256 and verifies non-zero byte count of pulled partition image.",
+                KnownLimitations = ["Unprivileged retail user builds enforce SELinux block read restrictions; FRP and userdata extraction are blocked."]
+            },
+            new OperationDescriptor
+            {
                 OperationId = "mtk.brom_readonly_probe",
                 DisplayName = "MediaTek BROM / Preloader Security & Chipset Probe",
                 Category = "MediaTek",

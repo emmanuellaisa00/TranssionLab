@@ -33,9 +33,20 @@ public sealed class DeviceProfileRepository : IDeviceProfileRepository
             _profiles[seed.ProfileId] = seed;
         }
 
+        var candidateDirs = new List<string>();
+        var bundledProfilesDir = Path.Combine(AppContext.BaseDirectory, "profiles");
+        if (Directory.Exists(bundledProfilesDir))
+        {
+            candidateDirs.Add(bundledProfilesDir);
+        }
         if (!string.IsNullOrWhiteSpace(_customProfilesDir) && Directory.Exists(_customProfilesDir))
         {
-            foreach (var file in Directory.EnumerateFiles(_customProfilesDir, "*.json"))
+            candidateDirs.Add(_customProfilesDir);
+        }
+
+        foreach (var dir in candidateDirs)
+        {
+            foreach (var file in Directory.EnumerateFiles(dir, "*.json"))
             {
                 try
                 {
@@ -145,6 +156,31 @@ public sealed class DeviceProfileRepository : IDeviceProfileRepository
         var profile = JsonSerializer.Deserialize<DeviceProfile>(json, JsonOpts)
             ?? throw new ServicingException("PROFILE_INVALID_JSON", "Failed to deserialize device profile JSON.");
 
+        var errors = ValidateProfile(profile);
+        if (errors.Count > 0)
+        {
+            throw new ServicingException("PROFILE_SCHEMA_INVALID", "Profile validation failed: " + string.Join("; ", errors));
+        }
+
+        lock (_gate)
+        {
+            _profiles[profile.ProfileId] = profile;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_customProfilesDir))
+        {
+            Directory.CreateDirectory(_customProfilesDir);
+            var targetPath = Path.Combine(_customProfilesDir, $"{profile.ProfileId}.json");
+            var normalizedJson = JsonSerializer.Serialize(profile, JsonOpts);
+            await File.WriteAllTextAsync(targetPath, normalizedJson, Encoding.UTF8, ct).ConfigureAwait(false);
+        }
+
+        return profile;
+    }
+
+    public async Task<DeviceProfile> SaveOrPromoteProfileAsync(DeviceProfile profile, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
         var errors = ValidateProfile(profile);
         if (errors.Count > 0)
         {

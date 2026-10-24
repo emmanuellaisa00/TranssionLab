@@ -20,13 +20,14 @@ Professional offline-first Windows 10 / Windows 11 desktop application (`C#` / `
    - **Provenance Tracking (`DETECTED` / `INFERRED` / `VERIFIED`):** Never infers an exact phone model from its chipset code alone.
    - **11-Step Validated Flash Manager:** Enforces device profile verification, Fastboot vs Fastbootd logical partition rules, sparse/raw capacity validation, NVRAM/calibration partition protection, mandatory Dry-Run validation, explicit confirmation phrase, post-flash state verification, and persistent JSON audit reports—never auto-erasing `userdata`.
    - **Bootloader Manager (Android 8–16):** Evaluates OEM unlock policy, discloses mandatory factory reset data loss, requires explicit confirmation phrase, and verifies resulting `unlocked` state via `fastboot getvar`.
+   - **Dedicated Partition Manager (`PartitionManager` — Page #13):** Live GPT & Dynamic `super` partition table enumeration across Fastboot, Fastbootd, Authorized ADB, and Recovery; dynamic `super` logical sub-partition lifecycle (`create-logical-partition`, `resize-logical-partition`, `delete-logical-partition` in unlocked Fastbootd); controlled safe erase (`cache`, `metadata`, explicit `userdata` while permanently blocking FRP, NVRAM/calibration, and bootloaders); authorized Recovery/root ADB `.img` block readback with SHA-256 verification; and verified `AVB0` `vbmeta` policy flashing.
 
 3. **Offline Firmware Explorer & ROM Studio (`TranssionLab.Firmware`)**
-   - Native C# binary parsers for `.zip`, Signed OTA `.zip`, `.tar`, `.tar.gz`/`.tgz`, Android `payload.bin` (`CrAU` v2 Protobuf manifest), MediaTek Scatter (Text & XML), Unisoc `.pac` binary containers, Android Sparse images (`0xED26FF3A`), Boot/Vendor_Boot images (`ANDROID!` v0–v4 & `VNDRBOOT`), `AVB0` vbmeta, and raw ext4/EROFS/F2FS images.
+   - Native C# binary parsers & extractors for `.zip`, Signed OTA `.zip` (`payload.bin`), `.tar`, `.tar.gz`/`.tgz`, standalone Android `payload.bin` (`CrAU` v2 full-OTA `REPLACE`/`REPLACE_BZ`/`REPLACE_XZ`/`ZSTD`/`ZERO` partition extractor with SHA-256 verification), MediaTek Scatter (Text & XML), Unisoc `.pac` binary containers, Android Sparse images (`0xED26FF3A` inspection + Sparse-to-Raw `.img` converter), Android Dynamic `super.img` `LpMetadata` parser, Boot/Vendor_Boot images (`ANDROID!` v0–v4 & `VNDRBOOT`), `AVB0` vbmeta, and raw ext4/EROFS/F2FS images.
    - Separates stock partition extraction from AOSP/LineageOS custom ROM source build readiness validation.
 
-4. **18-Page Dark Fluent WPF Interface (`TranssionLab.App`)**
-   - Dashboard, Connection Manager, Device Explorer, ADB Manager, Fastboot Manager, MediaTek Tools, META Mode, SPD/Unisoc Tools, DIAG & Diagnostics, Bootloader Manager, Firmware Explorer, ROM Studio, Flash Manager, Device Profiles, Operation History, Live Logs, Settings, and Documentation & About.
+4. **19-Page Dark Fluent WPF Interface (`TranssionLab.App`)**
+   - Dashboard, Connection Manager, Device Explorer, ADB Manager, Fastboot Manager, MediaTek Tools, META Mode, SPD/Unisoc Tools, DIAG & Diagnostics, Bootloader Manager, Firmware Explorer, ROM Studio, **Partition Manager**, Flash Manager, Device Profiles (with in-app physical bench verification sign-off), Operation History, Live Logs, Settings, and Documentation & About.
 
 ---
 

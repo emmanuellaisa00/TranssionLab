@@ -28,6 +28,7 @@ TranssionLab inspects Windows Plug and Play (`Win32_PnPEntity`) error codes with
 - **.NET 8 Runtime & WPF (`Microsoft.NETCore.App`, `Microsoft.WindowsDesktop.App`)** — MIT License.
 - **`Microsoft.Extensions.DependencyInjection` (8.0.1)** — MIT License.
 - **`System.IO.Ports` (8.0.0), `System.Management` (8.0.0), `System.IO.Hashing` (8.0.0)** — MIT License.
+- **`SharpCompress` (0.50.7) & `ZstdSharp.Port`** — MIT License (used offline for `payload.bin` BZip2, XZ/LZMA2, and ZStandard partition chunk decompression).
 
 ### External Redistributable Utilities (User-Configured or Separately Downloaded)
 - **Android SDK Platform-Tools (`adb.exe`, `fastboot.exe`, `AdbWinApi.dll`, `AdbWinUsbApi.dll`)**

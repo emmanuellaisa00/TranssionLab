@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using TranssionLab.Core.Enums;
@@ -71,17 +70,18 @@ public static class TarAndZipArchiveInspector
                         deviceHint ??= line["require board=".Length..].Trim();
                 }
             }
-            else if (entry.Name.Equals("payload.bin", StringComparison.OrdinalIgnoreCase) && entry.Length <= 64 * 1024 * 1024)
+            else if (entry.Name.Equals("payload.bin", StringComparison.OrdinalIgnoreCase))
             {
                 isOta = true;
                 using var ms = new MemoryStream();
                 using (var es = entry.Open())
                 {
-                    // Copy up to first 2 MB so we can read header + manifest safely even on non-seekable DeflateStream
+                    // Copy up to first 8 MiB of payload.bin so even large 40-partition manifests parse without unpacking multi-GB payloads
+                    const int maxHeaderBytes = 8 * 1024 * 1024;
                     var buf = new byte[65536];
                     int total = 0;
                     int r;
-                    while (total < 2 * 1024 * 1024 && (r = es.Read(buf, 0, Math.Min(buf.Length, 2 * 1024 * 1024 - total))) > 0)
+                    while (total < maxHeaderBytes && (r = es.Read(buf, 0, Math.Min(buf.Length, maxHeaderBytes - total))) > 0)
                     {
                         ms.Write(buf, 0, r);
                         total += r;
@@ -158,7 +158,6 @@ public static class TarAndZipArchiveInspector
                 break;
             }
 
-            // End-of-archive is two 512-byte all-zero blocks
             if (block.All(b => b == 0))
                 break;
 
@@ -201,7 +200,6 @@ public static class TarAndZipArchiveInspector
                 }
             }
 
-            // Advance past padded 512-byte payload blocks
             long paddedBytes = ((size + 511) / 512) * 512;
             SkipBytes(tarStream, paddedBytes);
         }
@@ -231,24 +229,62 @@ public static class TarAndZipArchiveInspector
             throw new SafetyPolicyViolationException("Blocked path traversal attempt during archive extraction.");
         }
 
+        var basePartName = Path.GetFileNameWithoutExtension(safeFileName);
+        if (HashAndBinaryHelpers.IsProtectedPartition(basePartName))
+        {
+            throw new SafetyPolicyViolationException($"Blocked extraction of protected security/NVRAM partition '{basePartName}'.");
+        }
+
+        if (format == FirmwareFormatKind.AndroidPayloadBin)
+        {
+            await using var pfs = new FileStream(packagePath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, useAsync: true);
+            return await AndroidPayloadBinParser.ExtractPartitionFromPayloadStreamAsync(pfs, basePartName, destinationDir, ct).ConfigureAwait(false);
+        }
+
         if (format is FirmwareFormatKind.ZipArchive or FirmwareFormatKind.AndroidOtaZip)
         {
             using var zip = ZipFile.OpenRead(packagePath);
             var target = zip.Entries.FirstOrDefault(e =>
                 string.Equals(e.FullName, entryName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase))
-                ?? throw new ServicingException("ENTRY_NOT_FOUND", $"Entry '{entryName}' not found in ZIP archive.");
+                string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(e.Name, $"{basePartName}.img", StringComparison.OrdinalIgnoreCase));
 
-            using var src = target.Open();
-            using var dst = File.Create(outputPath);
-            await src.CopyToAsync(dst, ct).ConfigureAwait(false);
-            return outputPath;
+            if (target is not null && !target.Name.Equals("payload.bin", StringComparison.OrdinalIgnoreCase))
+            {
+                var finalOut = Path.HasExtension(outputPath) ? outputPath : outputPath + ".img";
+                await using var src = target.Open();
+                await using var dst = File.Create(finalOut);
+                await src.CopyToAsync(dst, ct).ConfigureAwait(false);
+                return finalOut;
+            }
+
+            // Check if this is an A/B OTA ZIP with embedded payload.bin!
+            var payloadEntry = zip.Entries.FirstOrDefault(e => e.Name.Equals("payload.bin", StringComparison.OrdinalIgnoreCase));
+            if (payloadEntry is not null && !entryName.Equals("payload.bin", StringComparison.OrdinalIgnoreCase))
+            {
+                await using var payloadStream = payloadEntry.Open();
+                return await AndroidPayloadBinParser.ExtractPartitionFromPayloadStreamAsync(
+                    payloadStream,
+                    basePartName,
+                    destinationDir,
+                    ct).ConfigureAwait(false);
+            }
+
+            if (target is not null)
+            {
+                await using var src = target.Open();
+                await using var dst = File.Create(outputPath);
+                await src.CopyToAsync(dst, ct).ConfigureAwait(false);
+                return outputPath;
+            }
+
+            throw new ServicingException("ENTRY_NOT_FOUND", $"Entry '{entryName}' not found in ZIP archive or embedded payload.bin.");
         }
 
         if (format is FirmwareFormatKind.TarArchive or FirmwareFormatKind.TarGzipArchive)
         {
-            using var fs = File.OpenRead(packagePath);
-            using Stream tarStream = format == FirmwareFormatKind.TarGzipArchive
+            await using var fs = File.OpenRead(packagePath);
+            await using Stream tarStream = format == FirmwareFormatKind.TarGzipArchive
                 ? new GZipStream(fs, CompressionMode.Decompress)
                 : fs;
 
@@ -262,9 +298,11 @@ public static class TarAndZipArchiveInspector
                 long size = string.IsNullOrWhiteSpace(sizeOctal) ? 0 : Convert.ToInt64(sizeOctal, 8);
 
                 if (string.Equals(fullName, entryName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(Path.GetFileName(fullName), entryName, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(Path.GetFileName(fullName), entryName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Path.GetFileNameWithoutExtension(fullName), basePartName, StringComparison.OrdinalIgnoreCase))
                 {
-                    using var dst = File.Create(outputPath);
+                    var finalOut = Path.HasExtension(outputPath) ? outputPath : outputPath + ".img";
+                    await using var dst = File.Create(finalOut);
                     long remaining = size;
                     var copyBuf = new byte[65536];
                     while (remaining > 0)
@@ -275,7 +313,7 @@ public static class TarAndZipArchiveInspector
                         await dst.WriteAsync(copyBuf.AsMemory(0, got), ct).ConfigureAwait(false);
                         remaining -= got;
                     }
-                    return outputPath;
+                    return finalOut;
                 }
 
                 long padded = ((size + 511) / 512) * 512;
@@ -287,15 +325,17 @@ public static class TarAndZipArchiveInspector
 
         if (format == FirmwareFormatKind.UnisocPacContainer)
         {
-            using var fs = File.OpenRead(packagePath);
+            await using var fs = File.OpenRead(packagePath);
             var (_, _, slices, _) = MediaTekAndUnisocParsers.ParseUnisocPac(fs);
             var slice = slices.FirstOrDefault(s =>
                 string.Equals(s.FileId, entryName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(s.FileName, entryName, StringComparison.OrdinalIgnoreCase))
+                string.Equals(s.FileName, entryName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s.FileId, basePartName, StringComparison.OrdinalIgnoreCase))
                 ?? throw new ServicingException("PAC_ENTRY_NOT_FOUND", $"Entry '{entryName}' not found or has zero payload in PAC container.");
 
+            var finalOut = Path.HasExtension(outputPath) ? outputPath : Path.Combine(destinationDir, slice.FileName);
             fs.Position = slice.Offset;
-            using var dst = File.Create(outputPath);
+            await using var dst = File.Create(finalOut);
             long remaining = slice.Length;
             var copyBuf = new byte[65536];
             while (remaining > 0)
@@ -306,7 +346,30 @@ public static class TarAndZipArchiveInspector
                 await dst.WriteAsync(copyBuf.AsMemory(0, got), ct).ConfigureAwait(false);
                 remaining -= got;
             }
-            return outputPath;
+            return finalOut;
+        }
+
+        if (format is FirmwareFormatKind.MediaTekScatterText or FirmwareFormatKind.MediaTekScatterXml)
+        {
+            var (_, scatterParts, _) = MediaTekAndUnisocParsers.ParseMediaTekScatter(packagePath);
+            var matched = scatterParts.FirstOrDefault(p =>
+                string.Equals(p.PartitionName, entryName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.FileName, entryName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.PartitionName, basePartName, StringComparison.OrdinalIgnoreCase))
+                ?? throw new ServicingException("SCATTER_PARTITION_NOT_FOUND", $"Partition '{entryName}' not found in scatter descriptor.");
+
+            var scatterDir = Path.GetDirectoryName(Path.GetFullPath(packagePath)) ?? string.Empty;
+            var srcImg = Path.Combine(scatterDir, Path.GetFileName(matched.FileName));
+            if (!File.Exists(srcImg))
+            {
+                throw new ServicingException("SCATTER_IMAGE_MISSING", $"Referenced scatter image file does not exist: '{srcImg}'.");
+            }
+
+            var finalOut = Path.Combine(destinationDir, Path.GetFileName(matched.FileName));
+            await using var src = File.OpenRead(srcImg);
+            await using var dst = File.Create(finalOut);
+            await src.CopyToAsync(dst, ct).ConfigureAwait(false);
+            return finalOut;
         }
 
         throw new ServicingException("EXTRACTION_UNSUPPORTED", $"Single-entry extraction is not applicable to format '{format}'.");

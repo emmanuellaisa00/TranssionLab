@@ -6,12 +6,12 @@ using TranssionLab.ViewModels.Mvvm;
 
 namespace TranssionLab.ViewModels.Pages;
 
-// Page 15: Persistent Operation History
+// Page 16: Persistent Operation History
 public sealed class OperationHistoryViewModel : PageViewModelBase
 {
     private readonly IOperationHistoryStore _historyStore;
 
-    public override int PageNumber => 15;
+    public override int PageNumber => 16;
     public override string PageTitle => "Operation History";
     public override string NavigationGroup => "PROFILES & TELEMETRY";
     public override string IconGlyph => "🕒";
@@ -50,7 +50,7 @@ public sealed class OperationHistoryViewModel : PageViewModelBase
     }
 }
 
-// Page 16: Live Logs & Troubleshooting Export (Section 8)
+// Page 17: Live Logs & Troubleshooting Export (Section 8)
 public sealed class LiveLogsViewModel : PageViewModelBase
 {
     private readonly IStructuredLogger _logger;
@@ -58,7 +58,7 @@ public sealed class LiveLogsViewModel : PageViewModelBase
     private readonly IProtocolCapabilityService _capabilities;
     private readonly IUsbInterfaceProvider _usb;
 
-    public override int PageNumber => 16;
+    public override int PageNumber => 17;
     public override string PageTitle => "Live Logs";
     public override string NavigationGroup => "PROFILES & TELEMETRY";
     public override string IconGlyph => "▤";
@@ -190,12 +190,12 @@ public sealed class LiveLogsViewModel : PageViewModelBase
     }
 }
 
-// Page 17: Offline-First Settings
+// Page 18: Offline-First Settings
 public sealed class SettingsViewModel : PageViewModelBase
 {
     private readonly IAppSettingsService _settingsService;
 
-    public override int PageNumber => 17;
+    public override int PageNumber => 18;
     public override string PageTitle => "Settings";
     public override string NavigationGroup => "SYSTEM";
     public override string IconGlyph => "⚙";
@@ -255,10 +255,10 @@ public sealed class SettingsViewModel : PageViewModelBase
 
 public sealed record DocumentationTopic(string Title, string Category, string MarkdownContent);
 
-// Page 18: Offline Documentation & About
+// Page 19: Offline Documentation & About
 public sealed class DocumentationAboutViewModel : PageViewModelBase
 {
-    public override int PageNumber => 18;
+    public override int PageNumber => 19;
     public override string PageTitle => "Documentation & About";
     public override string NavigationGroup => "SYSTEM";
     public override string IconGlyph => "ℹ";
@@ -278,11 +278,11 @@ public sealed class DocumentationAboutViewModel : PageViewModelBase
             "1. Architecture & Honest Capability Policy",
             "Overview",
             """
-            TRANSSIONLAB UNIVERSAL ANDROID SERVICING SUITE (v1.0.0)
+            TRANSSIONLAB UNIVERSAL ANDROID SERVICING SUITE (v1.1.0)
             Target OS: Windows 10 & Windows 11 (x64, ARM64-ready) | Offline-First
 
             Core Engineering Principles:
-            • Every protocol is isolated behind its own service contract (USB/PnP, ADB, Recovery/Sideload, Fastboot/Fastbootd, MediaTek BROM/Preloader, META Mode, Unisoc/SPD, and DIAG).
+            • Every protocol is isolated behind its own service contract (USB/PnP, ADB, Recovery/Sideload, Fastboot/Fastbootd, Partition Manager, MediaTek BROM/Preloader, META Mode, Unisoc/SPD, and DIAG).
             • Data Provenance is tracked on every field: DETECTED, INFERRED, or VERIFIED.
             • Exact device marketing models (TECNO / Infinix / itel) are NEVER inferred from chipset codes (e.g., MT6789 or T606) alone.
             • When two or more phones are attached simultaneously, TranssionLab blocks ambiguous execution and requires explicit device selection.
@@ -295,8 +295,9 @@ public sealed class DocumentationAboutViewModel : PageViewModelBase
             """
             PROTOCOL IMPLEMENTATION & VERIFICATION SUMMARY:
             • USB & Windows PnP Discovery: Implemented & Unit-Tested (VID/PID/MI classification for 0x2ECC Transsion, 0x18D1 Google, 0x0E8D MediaTek, 0x1782 Unisoc, 0x05C6 Qualcomm; Driver error codes 10/22/28/43/52).
-            • ADB & Recovery Sideload: Implemented & Unit-Tested (device/unauthorized/offline/recovery/sideload states, getprop identity, battery/storage health, reboot modes, verified ZIP sideload).
-            • Fastboot & Userspace Fastbootd: Implemented & Unit-Tested (is-userspace differentiation, getvar inspection, active slot switching, official bootloader unlock with post-verification, 11-step validated partition flashing).
+            • ADB & Recovery Sideload: Implemented & Unit-Tested (device/unauthorized/offline/recovery/sideload states, getprop identity, /dev/block/by-name partition discovery & readback, battery/storage health, reboot modes, verified ZIP sideload).
+            • Fastboot & Userspace Fastbootd: Implemented & Unit-Tested (is-userspace differentiation, getvar inspection, active slot switching, dynamic super logical partition create/resize/delete, guarded erase, capability-checked fetch readback, official bootloader unlock with post-verification, 11-step validated partition flashing).
+            • Partition Manager & Firmware Pipeline: Implemented & Unit-Tested (live Fastboot/Fastbootd/ADB & offline Scatter/.pac/payload.bin/super.img/ZIP/TAR/Profile layouts, CrAU v2 payload.bin partition extraction with SHA-256 verification, Sparse-to-Raw conversion, Android LpMetadata super.img inspection).
             • MediaTek BROM / Preloader: Read-Only Diagnostics Implemented & Unit-Tested (4-byte sync A0 0A 50 05 -> 5F F5 AF FA, GET_HW_CODE 0xFD, GET_TARGET_CONFIG 0xD8 SBC/SLA/DAA detection, Text & XML Scatter inspection). SLA/DAA flashing requires OEM-signed DA.
             • MediaTek META Mode: Honest USB Detection & Provider Readiness Check Implemented (requires external licensed OEM ModemMETA library for active modem/AP sessions).
             • Spreadtrum / Unisoc: Read-Only Diagnostics & PAC Inspection Implemented & Unit-Tested (HDLC 0x7E framing, CRC-16 XMODEM, BSL_REP_VER 0x81 boot banner probe, binary .pac parser & extractor). Secure Boot flashing requires OEM-signed FDL1/FDL2.
@@ -310,10 +311,10 @@ public sealed class DocumentationAboutViewModel : PageViewModelBase
             HOW TO ADD & HARDWARE-VERIFY A TRANSSION DEVICE PROFILE:
             1. Connect the physical TECNO, Infinix, or itel device over authorized ADB and export its Device Snapshot JSON in Device Explorer.
             2. Boot into Fastboot and record 'fastboot getvar all' (verifying product, is-userspace, partition-size, and unlock policy).
-            3. Create a JSON file adhering to the DeviceProfile schema (see profiles/*.json in the installation directory):
+            3. Create a JSON file adhering to the DeviceProfile schema (see profiles/*.json in the installation directory), or promote a reference profile after entering bench evidence in Page 15 (Device Profiles):
                - Set Exact ModelCodes (e.g., ["CL9", "TECNO CL9"]), Codename ("TECNO-CL9"), ChipsetCode ("MT6896"), and ProtectedPartitions.
                - Only set "VerificationLevel": "HardwareVerified" and "IsHardwareVerified": true AFTER executing and archiving physical bench test logs on that exact build fingerprint.
-            4. Import the JSON file offline in Page 14 (Device Profiles -> Import JSON Profile).
+            4. Import or promote the JSON file offline in Page 15 (Device Profiles).
             """));
 
         Topics.Add(new DocumentationTopic(

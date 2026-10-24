@@ -222,8 +222,8 @@ public sealed class BootloaderFlashAndLoggingTests : IDisposable
         using var provider = services.BuildServiceProvider();
         var shell = provider.GetRequiredService<MainShellViewModel>();
 
-        Assert.Equal(18, shell.Pages.Count);
-        for (int i = 0; i < 18; i++)
+        Assert.Equal(19, shell.Pages.Count);
+        for (int i = 0; i < 19; i++)
         {
             Assert.Equal(i + 1, shell.Pages[i].PageNumber);
         }

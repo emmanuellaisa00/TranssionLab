@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using TranssionLab.Core.Enums;
 using TranssionLab.Core.Exceptions;
@@ -31,9 +33,10 @@ public sealed partial class AdbProvider : IAdbProvider
         _logger = logger;
     }
 
-    private string AdbPath => string.IsNullOrWhiteSpace(_settings.Current.AdbExecutablePath)
-        ? "adb"
-        : _settings.Current.AdbExecutablePath;
+    private string AdbPath => PlatformToolLocator.ResolveToolExecutable(
+        _settings.Current.AdbExecutablePath,
+        "adb",
+        _settings.Current.WorkspaceDataDirectory);
 
     public async Task<bool> IsToolAvailableAsync(CancellationToken ct = default)
     {
@@ -180,6 +183,154 @@ public sealed partial class AdbProvider : IAdbProvider
         return res.Succeeded ? res.StandardOutput.Trim() : $"Storage query failed: {res.StandardError}";
     }
 
+    public async Task<IReadOnlyList<AdbBlockPartitionEntry>> EnumerateBlockPartitionsAsync(string serial, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serial);
+
+        var uidRes = await _runner.RunAsync(AdbPath, ["-s", serial, "shell", "id -u"], TimeSpan.FromSeconds(6), ct).ConfigureAwait(false);
+        bool isRootShell = uidRes.Succeeded && uidRes.StandardOutput.Trim() == "0";
+
+        var procRes = await _runner.RunAsync(AdbPath, ["-s", serial, "shell", "cat /proc/partitions"], TimeSpan.FromSeconds(8), ct).ConfigureAwait(false);
+        var blockSizes = ParseProcPartitions(procRes.StandardOutput);
+
+        var byNameRes = await _runner.RunAsync(
+            AdbPath,
+            ["-s", serial, "shell", "ls -la /dev/block/by-name 2>/dev/null || ls -la /dev/block/platform/*/by-name 2>/dev/null"],
+            TimeSpan.FromSeconds(10),
+            ct).ConfigureAwait(false);
+
+        var entries = ParseByNameListing(byNameRes.StandardOutput, blockSizes, isRootShell);
+        _logger.LogInfo(
+            ProviderName,
+            $"adb -s {serial} enumerate /dev/block/by-name (found {entries.Count} partitions, rootShell={isRootShell})",
+            null,
+            serial,
+            "partition.inspect_table");
+        return entries;
+    }
+
+    public static Dictionary<string, long> ParseProcPartitions(string stdout)
+    {
+        var map = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(stdout))
+            return map;
+
+        foreach (var raw in stdout.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var tokens = raw.Trim().Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length >= 4 &&
+                long.TryParse(tokens[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var blocks1K))
+            {
+                map[tokens[3]] = blocks1K * 1024L;
+            }
+        }
+        return map;
+    }
+
+    public static List<AdbBlockPartitionEntry> ParseByNameListing(
+        string lsOutput,
+        IReadOnlyDictionary<string, long> procPartitionBytes,
+        bool isRootOrRecoveryShell)
+    {
+        var list = new List<AdbBlockPartitionEntry>();
+        if (string.IsNullOrWhiteSpace(lsOutput))
+            return list;
+
+        foreach (var rawLine in lsOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var line = rawLine.Trim();
+            int arrowIdx = line.IndexOf("->", StringComparison.Ordinal);
+            if (arrowIdx <= 0)
+                continue;
+
+            var left = line[..arrowIdx].Trim();
+            var targetNode = line[(arrowIdx + 2)..].Trim();
+            var leftTokens = left.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (leftTokens.Length == 0)
+                continue;
+
+            var partName = leftTokens[^1].Trim();
+            if (string.IsNullOrWhiteSpace(partName) || partName is "." or "..")
+                continue;
+
+            var shortDevName = Path.GetFileName(targetNode);
+            long? bytes = procPartitionBytes.TryGetValue(shortDevName, out var b) ? b : null;
+
+            list.Add(new AdbBlockPartitionEntry(
+                partName,
+                $"/dev/block/by-name/{partName}",
+                targetNode,
+                bytes,
+                isRootOrRecoveryShell));
+        }
+
+        return list.OrderBy(p => p.PartitionName, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    public async Task<(CommandExecutionResult Result, long BytesRead, string? Sha256Hex)> ReadbackPartitionToFileAsync(
+        string serial,
+        string blockNodePath,
+        string localDestinationPath,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serial);
+        ArgumentException.ThrowIfNullOrWhiteSpace(blockNodePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(localDestinationPath);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(localDestinationPath))!);
+        if (File.Exists(localDestinationPath))
+        {
+            File.Delete(localDestinationPath);
+        }
+
+        var res = await _runner.RunAsync(
+            AdbPath,
+            ["-s", serial, "pull", blockNodePath, localDestinationPath],
+            TimeSpan.FromMinutes(15),
+            ct).ConfigureAwait(false);
+
+        long bytes = 0;
+        string? shaHex = null;
+        bool ok = res.Succeeded && File.Exists(localDestinationPath);
+        if (ok)
+        {
+            var fi = new FileInfo(localDestinationPath);
+            bytes = fi.Length;
+            if (bytes == 0)
+            {
+                ok = false;
+                File.Delete(localDestinationPath);
+            }
+            else if (bytes <= 1024L * 1024 * 1024)
+            {
+                await using var fs = File.OpenRead(localDestinationPath);
+                var hashBytes = await SHA256.HashDataAsync(fs, ct).ConfigureAwait(false);
+                shaHex = Convert.ToHexString(hashBytes).ToLowerInvariant();
+            }
+        }
+
+        _logger.Log(new StructuredLogEntry
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            SessionId = _logger.CurrentSessionId,
+            SequenceNumber = 0,
+            Severity = ok ? LogSeverity.Info : LogSeverity.Warning,
+            DeviceId = serial,
+            ProtocolProvider = ProviderName,
+            OperationId = "partition.adb_readback",
+            RequestedAction = $"adb -s {serial} pull {blockNodePath} \"{Path.GetFileName(localDestinationPath)}\"",
+            CommandOutput = $"{res.StandardOutput}\n{res.StandardError}".Trim(),
+            ErrorMessage = ok ? null : $"{res.StandardOutput} {res.StandardError}".Trim(),
+            ExitCode = res.ExitCode,
+            DurationMs = res.DurationMs,
+            VerificationResult = ok
+                ? $"Readback verified ({bytes:N0} B, SHA256={shaHex ?? "SKIPPED_OVER_1GB"})"
+                : "Readback denied or failed (SELinux restricts raw block nodes on non-root retail user builds; use Recovery or authorized root shell)"
+        });
+
+        return (res with { Succeeded = ok }, bytes, shaHex);
+    }
+
     public async Task<CommandExecutionResult> RebootAsync(string serial, string targetMode, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(serial);
@@ -214,7 +365,6 @@ public sealed partial class AdbProvider : IAdbProvider
             throw new ServicingException("OTA_FILE_MISSING", $"OTA package not found: {otaZipPath}");
         }
 
-        // Verify PK zip magic before invoking adb sideload
         using (var fs = File.OpenRead(otaZipPath))
         {
             var magic = new byte[4];

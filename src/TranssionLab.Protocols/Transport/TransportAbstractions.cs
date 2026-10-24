@@ -7,6 +7,49 @@ using TranssionLab.Core.Interfaces;
 
 namespace TranssionLab.Protocols.Transport;
 
+public static class PlatformToolLocator
+{
+    public static string ResolveToolExecutable(string? configuredSetting, string defaultCommandName, string? workspaceDataDirectory = null)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredSetting) &&
+            !string.Equals(configuredSetting.Trim(), defaultCommandName, StringComparison.OrdinalIgnoreCase))
+        {
+            return configuredSetting.Trim();
+        }
+
+        var exeName = OperatingSystem.IsWindows() ? $"{defaultCommandName}.exe" : defaultCommandName;
+        var baseDir = AppContext.BaseDirectory;
+        var candidates = new List<string>
+        {
+            Path.Combine(baseDir, "tools", exeName),
+            Path.Combine(baseDir, "platform-tools", exeName),
+            Path.Combine(baseDir, exeName)
+        };
+
+        if (!string.IsNullOrWhiteSpace(workspaceDataDirectory))
+        {
+            candidates.Add(Path.Combine(workspaceDataDirectory, "tools", exeName));
+            candidates.Add(Path.Combine(workspaceDataDirectory, "platform-tools", exeName));
+        }
+
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!string.IsNullOrWhiteSpace(localAppData))
+        {
+            candidates.Add(Path.Combine(localAppData, "Android", "Sdk", "platform-tools", exeName));
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return defaultCommandName;
+    }
+}
+
 public interface IProcessRunner
 {
     Task<CommandExecutionResult> RunAsync(

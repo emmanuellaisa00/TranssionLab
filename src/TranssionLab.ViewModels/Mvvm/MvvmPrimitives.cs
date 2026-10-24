@@ -7,6 +7,7 @@ namespace TranssionLab.ViewModels.Mvvm;
 public static class UiInteractionBridge
 {
     public static Func<string, string, string?>? PickOpenFile { get; set; }
+    public static Func<string, string, string, string?>? PickSaveFile { get; set; }
     public static Func<string, string?>? PickDirectory { get; set; }
     public static Action<string>? CopyTextToClipboard { get; set; }
 }

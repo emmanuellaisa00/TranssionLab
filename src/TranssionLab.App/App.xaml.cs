@@ -28,6 +28,17 @@ public partial class App : Application
             return dlg.ShowDialog() == true ? dlg.FileName : null;
         };
 
+        UiInteractionBridge.PickSaveFile = (title, filter, defaultFileName) =>
+        {
+            var dlg = new SaveFileDialog
+            {
+                Title = title,
+                Filter = filter,
+                FileName = defaultFileName
+            };
+            return dlg.ShowDialog() == true ? dlg.FileName : null;
+        };
+
         UiInteractionBridge.PickDirectory = title =>
         {
             var dlg = new OpenFolderDialog

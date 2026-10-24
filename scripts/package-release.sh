@@ -4,23 +4,25 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.1.0}"
 RID="win-x64"
 PKG_NAME="TranssionLab-v${VERSION}-${RID}"
 STAGE_DIR="/tmp/transsionlab_publish_${RID}"
 BUNDLE_DIR="/tmp/${PKG_NAME}"
 
+export DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1
+
 echo "==> [1/6] Restoring solution dependencies..."
-dotnet restore TranssionLab.sln
+dotnet restore TranssionLab.sln -nodeReuse:false
 
 echo "==> [2/6] Compiling solution with Roslyn static analysis (-warnaserror)..."
-dotnet build TranssionLab.sln --configuration Release --no-restore -warnaserror
+dotnet build TranssionLab.sln --configuration Release --no-restore -nodeReuse:false -p:UseSharedCompilation=false -m:1 -warnaserror
 
 echo "==> [3/6] Verifying Windows ARM64 compilation target..."
-dotnet build src/TranssionLab.App/TranssionLab.App.csproj --configuration Release -r win-arm64 -warnaserror
+dotnet build src/TranssionLab.App/TranssionLab.App.csproj --configuration Release -r win-arm64 -nodeReuse:false -p:UseSharedCompilation=false -m:1 -warnaserror
 
 echo "==> [4/6] Running automated test suite..."
-dotnet test tests/TranssionLab.Tests/TranssionLab.Tests.csproj --configuration Release --filter "Category=SimulatedUnit"
+dotnet test tests/TranssionLab.Tests/TranssionLab.Tests.csproj --configuration Release --no-build -nodeReuse:false --filter "Category=SimulatedUnit"
 
 echo "==> [5/6] Publishing self-contained Windows x64 single-file executable..."
 rm -rf "$STAGE_DIR" "$BUNDLE_DIR"
@@ -28,6 +30,9 @@ dotnet publish src/TranssionLab.App/TranssionLab.App.csproj \
   --configuration Release \
   --runtime "$RID" \
   --self-contained true \
+  -nodeReuse:false \
+  -p:UseSharedCompilation=false \
+  -m:1 \
   -p:Version="$VERSION" \
   -p:PublishSingleFile=true \
   -p:IncludeNativeLibrariesForSelfExtract=true \
@@ -46,7 +51,7 @@ Android SDK Platform-Tools (adb.exe / fastboot.exe) Placement
 =============================================================
 Place official Apache-2.0 licensed Android SDK Platform-Tools (adb.exe, fastboot.exe,
 AdbWinApi.dll, AdbWinUsbApi.dll) in this folder or on your Windows PATH, or configure
-their exact location in TranssionLab -> Page #17 (Settings).
+their exact location in TranssionLab -> Page #18 (Settings).
 Official Google download: https://developer.android.com/tools/releases/platform-tools
 EOF
 

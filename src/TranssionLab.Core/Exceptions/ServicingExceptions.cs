@@ -31,3 +31,11 @@ public sealed class SafetyPolicyViolationException : ServicingException
     {
     }
 }
+
+public sealed class CapabilityUnavailableException : ServicingException
+{
+    public CapabilityUnavailableException(string message)
+        : base("CAPABILITY_UNAVAILABLE", message)
+    {
+    }
+}
