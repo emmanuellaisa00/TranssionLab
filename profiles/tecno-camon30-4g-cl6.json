@@ -1,0 +1,190 @@
+{
+  "ProfileId": "tecno-camon30-4g-cl6",
+  "Manufacturer": "TECNO",
+  "MarketingName": "TECNO CAMON 30 4G",
+  "ModelCodes": [
+    "CL6",
+    "CL6k",
+    "TECNO CL6"
+  ],
+  "Codename": "TECNO-CL6",
+  "UiSkin": "HiOS 14 / 15",
+  "ChipsetVendor": "MediaTek",
+  "ChipsetFamily": "MediaTek Helio G99 Ultimate",
+  "ChipsetCode": "MT6789",
+  "StorageType": "UFS 2.2",
+  "PartitionScheme": "Virtual A/B Dynamic",
+  "MinAndroidVersion": 14,
+  "MaxVerifiedAndroidVersion": 15,
+  "Android16NotesApplicable": false,
+  "Android16CompatibilityNote": "Android 16 bootloader compatibility must be verified per regional build before flashing.",
+  "BromSlaDaaEnforced": true,
+  "UnisocSignedFdlEnforced": false,
+  "BootloaderPolicy": {
+    "OemUnlockToggleSupported": true,
+    "RequiresFastbootFlashingUnlock": true,
+    "UsesLegacyOemUnlock": false,
+    "RequiresManufacturerToken": false,
+    "SupportsFastbootdLogicalFlashing": true,
+    "RequiresAvbVbmetaDisableConfirmation": true,
+    "UnlockCommand": "fastboot flashing unlock",
+    "Prerequisites": [
+      "Enable \u0027OEM unlocking\u0027 and \u0027USB debugging\u0027 in HiOS Developer Options.",
+      "Install signed WinUSB fastboot driver if Windows shows Android Bootloader Interface with Code 28."
+    ],
+    "DeviceSpecificSteps": [
+      "1. Reboot to Bootloader via ADB (\u0027adb reboot bootloader\u0027).",
+      "2. Verify \u0027fastboot getvar unlocked\u0027 currently reports \u0027no\u0027.",
+      "3. Run \u0027fastboot flashing unlock\u0027 and confirm with Volume Up on the device.",
+      "4. Verify resulting state via \u0027fastboot getvar unlocked\u0027 -\u003E \u0027yes\u0027."
+    ],
+    "DataLossAndSecurityWarnings": [
+      "Mandatory factory reset wipes all internal storage.",
+      "BROM/Preloader SLA\u002BDAA remains hardware-enforced; unauthenticated BROM flashing is not supported."
+    ]
+  },
+  "ProtectedPartitions": [
+    "nvram",
+    "nvdata",
+    "nvcfg",
+    "persist",
+    "proinfo",
+    "protect1",
+    "protect2",
+    "seccfg",
+    "otp",
+    "preloader"
+  ],
+  "KnownPartitions": [
+    {
+      "PartitionName": "boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "init_boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "init_boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "vendor_boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vendor_boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vbmeta_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "vbmeta_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "dtbo_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 33554432
+    },
+    {
+      "PartitionName": "super",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 9663676416
+    },
+    {
+      "PartitionName": "system_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 5368709120
+    },
+    {
+      "PartitionName": "vendor_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 1610612736
+    },
+    {
+      "PartitionName": "product_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 2684354560
+    },
+    {
+      "PartitionName": "nvram",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "nvdata",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "persist",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    }
+  ],
+  "SupportedModes": [
+    "AdbAuthorized",
+    "Recovery",
+    "AdbSideload",
+    "FastbootBootloader",
+    "FastbootdUserspace",
+    "MediaTekPreloader",
+    "MediaTekBrom",
+    "MediaTekMeta"
+  ],
+  "VerificationLevel": "ReferenceSpecification",
+  "HardwareVerification": {
+    "IsHardwareVerified": false,
+    "TestedBy": null,
+    "TestedAtUtc": null,
+    "TestedBuildFingerprint": null,
+    "VerificationNotes": "Documented reference profile; physical bench verification pending."
+  }
+}

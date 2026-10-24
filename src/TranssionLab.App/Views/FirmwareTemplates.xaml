@@ -1,0 +1,286 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:pages="clr-namespace:TranssionLab.ViewModels.Pages;assembly=TranssionLab.ViewModels">
+
+  <!-- PAGE 11: FIRMWARE EXPLORER (Section 6) -->
+  <DataTemplate DataType="{x:Type pages:FirmwareExplorerViewModel}">
+    <StackPanel>
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="Firmware Explorer &amp; Binary Format Inspector" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,4" />
+          <TextBlock Text="Offline inspection for ZIP, Signed OTA ZIP, TAR / TAR.GZ, Android payload.bin (CrAU v2), MediaTek Scatter (Text &amp; XML), Unisoc .pac, Android Sparse (0xED26FF3A), Boot / Vendor_Boot (ANDROID! / VNDRBOOT), VBMeta, and Raw filesystem images."
+                     Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding SelectedFilePath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+            <Button Grid.Column="1" Content="Browse Local File..." Command="{Binding BrowseFirmwareFileCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
+            <Button Grid.Column="2" Content="Inspect Package &amp; Hashes" Command="{Binding InspectFirmwareCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource FluentCardStyle}" Visibility="{Binding HasInspectionResult, Converter={StaticResource BoolToVis}}">
+        <StackPanel DataContext="{Binding InspectionResult}">
+          <UniformGrid Columns="3" Margin="0,0,0,8">
+            <TextBlock Foreground="{StaticResource PrimaryTextBrush}">Format: <Run Text="{Binding PackageFormat, Mode=OneWay}" Foreground="{StaticResource AccentCyanBrush}" FontWeight="Bold" /></TextBlock>
+            <TextBlock Foreground="{StaticResource PrimaryTextBrush}">Size (Bytes): <Run Text="{Binding FileSizeBytes, Mode=OneWay}" /></TextBlock>
+            <TextBlock Foreground="{StaticResource PrimaryTextBrush}">CRC32: <Run Text="{Binding Crc32Hex, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" /></TextBlock>
+          </UniformGrid>
+          <TextBlock Foreground="{StaticResource SecondaryTextBrush}" FontFamily="{StaticResource MonoFont}" FontSize="11.5" Margin="0,0,0,4">
+            SHA-256: <Run Text="{Binding Sha256Hex, Mode=OneWay}" />
+          </TextBlock>
+          <TextBlock Foreground="{StaticResource SecondaryTextBrush}" FontSize="12">
+            Model / Board Hint: <Run Text="{Binding TargetModelHint, Mode=OneWay}" /> | Chipset Hint: <Run Text="{Binding TargetChipsetHint, Mode=OneWay}" />
+          </TextBlock>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource FluentCardStyle}" Visibility="{Binding HasInspectionResult, Converter={StaticResource BoolToVis}}">
+        <StackPanel>
+          <TextBlock Text="Discovered Partition Images &amp; Metadata" Style="{StaticResource SectionHeadingStyle}" />
+          <DataGrid ItemsSource="{Binding Partitions}" MaxHeight="240" Margin="0,0,0,12">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Partition" Binding="{Binding PartitionName}" Width="140" />
+              <DataGridTextColumn Header="File / Source" Binding="{Binding FileName}" Width="170" />
+              <DataGridTextColumn Header="Effective Bytes" Binding="{Binding EffectiveUnsparsedBytes}" Width="125" />
+              <DataGridTextColumn Header="Protected NV" Binding="{Binding IsProtectedNvOrRadio}" Width="95" />
+              <DataGridTextColumn Header="Format &amp; Header Summary" Binding="{Binding FormatSummary}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+
+          <TextBlock Text="Parsing Warnings &amp; Dependency Notices" Style="{StaticResource FieldLabelStyle}" />
+          <ItemsControl ItemsSource="{Binding WarningsAndNotes}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" Foreground="{StaticResource WarningAmberBrush}" FontSize="12" Margin="0,2" TextWrapping="Wrap" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+
+  <!-- PAGE 12: ROM STUDIO (Section 6) -->
+  <DataTemplate DataType="{x:Type pages:RomStudioViewModel}">
+    <StackPanel>
+      <!-- Part A: Stock Firmware Extraction -->
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="1. Stock Firmware Partition Extractor (ZIP / TAR / Unisoc PAC)" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,4" />
+          <TextBlock Text="Extracts individual unprotected stock partition images (e.g. boot.img, init_boot.img, vbmeta.img) into a local staging directory for Fastboot verification. Protected NVRAM/calibration partitions are automatically skipped."
+                     Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+          <Grid Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding StockArchivePath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+            <Button Grid.Column="1" Content="Select Stock Archive..." Command="{Binding BrowseStockArchiveCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+          </Grid>
+
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="220" />
+              <ColumnDefinition Width="12" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding EntryToExtract, UpdateSourceTrigger=PropertyChanged}" ToolTip="Entry or FileID (e.g. boot.img or BOOT)" />
+            <TextBox Grid.Column="2" Text="{Binding StagingOutputDirectory, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+            <Button Grid.Column="3" Content="Extract Partition Image" Command="{Binding ExtractEntryCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- Part B: Source-Based Custom ROM Build Readiness Validator -->
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="2. Source-Based Custom ROM Build Readiness Validator" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,4" />
+          <TextBlock Text="TranssionLab never claims to fabricate a custom ROM from a stock archive alone. Validate local AOSP / LineageOS source tree prerequisites (Linux/WSL2 host, >=350 GiB disk, .repo manifest, device tree, kernel/GKI 2.0, and vendor blobs)."
+                     Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+          <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding AospWorkspacePath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+            <Button Grid.Column="1" Content="Browse Workspace..." Command="{Binding BrowseAospWorkspaceCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
+            <Button Grid.Column="2" Content="Validate Source Build Prerequisites" Command="{Binding ValidateSourceBuildEnvCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+          </Grid>
+
+          <Border Background="#0F172A" BorderBrush="{StaticResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12"
+                  Visibility="{Binding BuildEnvReport, Converter={StaticResource NullToCollapsed}}">
+            <StackPanel DataContext="{Binding BuildEnvReport}">
+              <TextBlock Foreground="{StaticResource AccentCyanBrush}" FontWeight="Bold" Margin="0,0,0,6">
+                Ready For Source Build: <Run Text="{Binding ReadyForSourceBuild, Mode=OneWay}" />
+              </TextBlock>
+              <ItemsControl ItemsSource="{Binding ValidationFindings}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Text="{Binding}" Foreground="{StaticResource WarningAmberBrush}" FontSize="12" Margin="0,2" TextWrapping="Wrap" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+
+  <!-- PAGE 13: SAFE 11-STEP FLASH MANAGER (Section 7) -->
+  <DataTemplate DataType="{x:Type pages:FlashManagerViewModel}">
+    <StackPanel>
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="11-Step Validated Flash Manager (Fastboot &amp; Fastbootd)" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,4" />
+          <TextBlock Text="Enforces physical device identification, verified profile match, Fastboot vs Fastbootd logical partition rules, image SHA-256 &amp; sparse capacity checks, NVRAM/calibration protection, mandatory Dry-Run, and explicit confirmation. Never auto-erases userdata."
+                     Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+          <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="170" />
+              <ColumnDefinition Width="10" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding NewPartitionName, UpdateSourceTrigger=PropertyChanged}" ToolTip="Target partition (e.g. boot_a, init_boot_a, system_a)" />
+            <TextBox Grid.Column="2" Text="{Binding NewImageFilePath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+            <Button Grid.Column="3" Content="Browse Image..." Command="{Binding BrowseFlashImageCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
+            <Button Grid.Column="4" Content="Add to Queue" Command="{Binding AddToQueueCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
+            <Button Grid.Column="5" Content="Clear" Command="{Binding ClearQueueCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+          </Grid>
+
+          <DataGrid ItemsSource="{Binding FlashQueue}" MaxHeight="135" Margin="0,0,0,10">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Target Partition" Binding="{Binding PartitionName}" Width="180" />
+              <DataGridTextColumn Header="Local Image Path" Binding="{Binding ImageFilePath}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+
+          <WrapPanel>
+            <Button Content="Step 1–6: Build &amp; Validate Execution Plan" Command="{Binding BuildPlanCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,10,0" />
+            <Button Content="Step 7: Run Dry-Run Pre-Flight Check" Command="{Binding RunDryRunCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0" />
+            <Button Content="Safe Cancel (Between Partitions)" Command="{Binding CancelBetweenPartitionsCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Proposed Plan & Safety Findings -->
+      <Border Style="{StaticResource FluentCardStyle}" Visibility="{Binding ActivePlan, Converter={StaticResource NullToCollapsed}}">
+        <StackPanel DataContext="{Binding ActivePlan}">
+          <TextBlock Foreground="{StaticResource AccentCyanBrush}" FontWeight="Bold" Margin="0,0,0,6">
+            Plan <Run Text="{Binding PlanId, Mode=OneWay}" /> | Profile: <Run Text="{Binding MatchedProfileId, Mode=OneWay}" /> | Blocked: <Run Text="{Binding BlockedBySafetyPolicy, Mode=OneWay}" />
+          </TextBlock>
+          <DataGrid ItemsSource="{Binding ProposedSteps}" MaxHeight="150" Margin="0,0,0,8">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="#" Binding="{Binding StepOrder}" Width="40" />
+              <DataGridTextColumn Header="Action" Binding="{Binding ActionType}" Width="90" />
+              <DataGridTextColumn Header="Partition" Binding="{Binding TargetPartition}" Width="120" />
+              <DataGridTextColumn Header="Command Preview" Binding="{Binding CommandPreview}" Width="320" />
+              <DataGridTextColumn Header="Notes" Binding="{Binding Notes}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+          <ItemsControl ItemsSource="{Binding SafetyFindings}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" Foreground="{StaticResource WarningAmberBrush}" FontSize="12" Margin="0,1" TextWrapping="Wrap" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <!-- Step 8–11: Confirmation & Execution -->
+      <Border Style="{StaticResource FluentCardStyle}" Visibility="{Binding DryRunReport, Converter={StaticResource NullToCollapsed}}">
+        <StackPanel>
+          <TextBlock Text="Step 8–11: Explicit Confirmation, Write &amp; Post-Flash Verification" Style="{StaticResource SectionHeadingStyle}" />
+          <CheckBox IsChecked="{Binding RiskAcknowledged}" Content="I have verified target hardware compatibility, battery >= 50%, and understand partition writes modify device firmware." />
+          <TextBlock Foreground="{StaticResource SecondaryTextBrush}" Margin="0,6,0,4">
+            Type exact confirmation phrase: <Run Text="{Binding ActivePlan.RequiredConfirmationText, Mode=OneWay}" Foreground="{StaticResource WarningAmberBrush}" FontFamily="{StaticResource MonoFont}" FontWeight="Bold" />
+          </TextBlock>
+          <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="280" />
+              <ColumnDefinition Width="12" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="16" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding ConfirmationText, UpdateSourceTrigger=PropertyChanged}" FontFamily="{StaticResource MonoFont}" />
+            <Button Grid.Column="2" Content="Execute Permitted Flash Operation" Command="{Binding ExecuteFlashCommand}" Style="{StaticResource DangerButtonStyle}" />
+            <ProgressBar Grid.Column="4" Minimum="0" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}" Height="18" Background="#0F172A" Foreground="{StaticResource AccentCyanBrush}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+
+  <!-- PAGE 14: DEVICE PROFILES -->
+  <DataTemplate DataType="{x:Type pages:DeviceProfilesViewModel}">
+    <StackPanel>
+      <Border Style="{StaticResource FluentCardStyle}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox Grid.Column="0" Text="{Binding SearchFilter, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search TECNO / Infinix / itel / MT6789 / T606" />
+          <TextBox Grid.Column="2" Text="{Binding ImportJsonPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+          <Button Grid.Column="3" Content="Browse JSON..." Command="{Binding BrowseProfileJsonCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
+          <Button Grid.Column="4" Content="Import Local Profile" Command="{Binding ImportProfileCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+        </Grid>
+      </Border>
+
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="1.25*" />
+          <ColumnDefinition Width="14" />
+          <ColumnDefinition Width="1*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Style="{StaticResource FluentCardStyle}">
+          <DataGrid ItemsSource="{Binding FilteredProfiles}" SelectedItem="{Binding SelectedProfile}" Height="460">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Brand" Binding="{Binding Manufacturer}" Width="75" />
+              <DataGridTextColumn Header="Marketing Name" Binding="{Binding MarketingName}" Width="185" />
+              <DataGridTextColumn Header="Codename" Binding="{Binding Codename}" Width="110" />
+              <DataGridTextColumn Header="SoC" Binding="{Binding ChipsetCode}" Width="85" />
+              <DataGridTextColumn Header="Verification" Binding="{Binding VerificationLevel}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </Border>
+
+        <Border Grid.Column="2" Style="{StaticResource FluentCardStyle}" Visibility="{Binding SelectedProfile, Converter={StaticResource NullToCollapsed}}">
+          <StackPanel DataContext="{Binding SelectedProfile}">
+            <TextBlock Text="{Binding MarketingName}" Style="{StaticResource SectionHeadingStyle}" />
+            <TextBlock Foreground="{StaticResource AccentCyanBrush}" Margin="0,0,0,8">
+              <Run Text="{Binding ChipsetFamily, Mode=OneWay}" /> (<Run Text="{Binding ChipsetCode, Mode=OneWay}" />)
+            </TextBlock>
+            <TextBlock Foreground="{StaticResource PrimaryTextBrush}" Margin="0,2">Codename: <Run Text="{Binding Codename, Mode=OneWay}" /></TextBlock>
+            <TextBlock Foreground="{StaticResource PrimaryTextBrush}" Margin="0,2">UI Skin: <Run Text="{Binding UiSkin, Mode=OneWay}" /></TextBlock>
+            <TextBlock Foreground="{StaticResource PrimaryTextBrush}" Margin="0,2">Storage &amp; Layout: <Run Text="{Binding StorageType, Mode=OneWay}" /> — <Run Text="{Binding PartitionScheme, Mode=OneWay}" /></TextBlock>
+            <TextBlock Foreground="{StaticResource PrimaryTextBrush}" Margin="0,2">Verified Android Range: <Run Text="{Binding MinAndroidVersion, Mode=OneWay}" /> – <Run Text="{Binding MaxVerifiedAndroidVersion, Mode=OneWay}" /></TextBlock>
+            <TextBlock Foreground="{StaticResource WarningAmberBrush}" Margin="0,6">BROM SLA/DAA Enforced: <Run Text="{Binding BromSlaDaaEnforced, Mode=OneWay}" /></TextBlock>
+            <TextBlock Foreground="{StaticResource WarningAmberBrush}" Margin="0,2">Unisoc Signed FDL Enforced: <Run Text="{Binding UnisocSignedFdlEnforced, Mode=OneWay}" /></TextBlock>
+            <TextBlock Foreground="{StaticResource SecondaryTextBrush}" Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding HardwareVerification.VerificationNotes}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </StackPanel>
+  </DataTemplate>
+
+</ResourceDictionary>

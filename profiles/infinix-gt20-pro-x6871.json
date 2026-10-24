@@ -1,0 +1,188 @@
+{
+  "ProfileId": "infinix-gt20-pro-x6871",
+  "Manufacturer": "Infinix",
+  "MarketingName": "Infinix GT 20 Pro 5G",
+  "ModelCodes": [
+    "X6871",
+    "Infinix X6871"
+  ],
+  "Codename": "Infinix-X6871",
+  "UiSkin": "XOS 14 / 15 / 16 for GT",
+  "ChipsetVendor": "MediaTek",
+  "ChipsetFamily": "MediaTek Dimensity 8200 Ultimate",
+  "ChipsetCode": "MT6896",
+  "StorageType": "UFS 3.1",
+  "PartitionScheme": "Virtual A/B Dynamic (GKI 2.0)",
+  "MinAndroidVersion": 14,
+  "MaxVerifiedAndroidVersion": 16,
+  "Android16NotesApplicable": true,
+  "Android16CompatibilityNote": "Supports Android 15/16 GKI 2.0 layout; ramdisk resides in init_boot_a/b rather than boot_a/b.",
+  "BromSlaDaaEnforced": true,
+  "UnisocSignedFdlEnforced": false,
+  "BootloaderPolicy": {
+    "OemUnlockToggleSupported": true,
+    "RequiresFastbootFlashingUnlock": true,
+    "UsesLegacyOemUnlock": false,
+    "RequiresManufacturerToken": false,
+    "SupportsFastbootdLogicalFlashing": true,
+    "RequiresAvbVbmetaDisableConfirmation": true,
+    "UnlockCommand": "fastboot flashing unlock",
+    "Prerequisites": [
+      "Enable \u0027OEM unlocking\u0027 in XOS Developer Options.",
+      "Ensure Virtual A/B snapshot merge status is \u0027none\u0027 before unlocking."
+    ],
+    "DeviceSpecificSteps": [
+      "1. Reboot to Bootloader via \u0027adb reboot bootloader\u0027.",
+      "2. Execute \u0027fastboot flashing unlock\u0027 and confirm via Volume Up key.",
+      "3. Re-query \u0027fastboot getvar unlocked\u0027 to verify unlock completion."
+    ],
+    "DataLossAndSecurityWarnings": [
+      "Erases all userdata immediately upon confirmation.",
+      "Kernel modifications on GKI 2.0 require matching KMI version; ramdisk changes belong in init_boot."
+    ]
+  },
+  "ProtectedPartitions": [
+    "nvram",
+    "nvdata",
+    "nvcfg",
+    "persist",
+    "proinfo",
+    "protect1",
+    "protect2",
+    "seccfg",
+    "otp",
+    "preloader"
+  ],
+  "KnownPartitions": [
+    {
+      "PartitionName": "boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "init_boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "init_boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "vendor_boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vendor_boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vbmeta_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "vbmeta_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "dtbo_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 33554432
+    },
+    {
+      "PartitionName": "super",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 9663676416
+    },
+    {
+      "PartitionName": "system_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 5368709120
+    },
+    {
+      "PartitionName": "vendor_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 1610612736
+    },
+    {
+      "PartitionName": "product_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 2684354560
+    },
+    {
+      "PartitionName": "nvram",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "nvdata",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "persist",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    }
+  ],
+  "SupportedModes": [
+    "AdbAuthorized",
+    "Recovery",
+    "AdbSideload",
+    "FastbootBootloader",
+    "FastbootdUserspace",
+    "MediaTekPreloader",
+    "MediaTekBrom",
+    "MediaTekMeta"
+  ],
+  "VerificationLevel": "ReferenceSpecification",
+  "HardwareVerification": {
+    "IsHardwareVerified": false,
+    "TestedBy": null,
+    "TestedAtUtc": null,
+    "TestedBuildFingerprint": null,
+    "VerificationNotes": "Documented XOS / MT6896 reference profile."
+  }
+}

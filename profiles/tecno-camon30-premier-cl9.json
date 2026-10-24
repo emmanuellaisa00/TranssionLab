@@ -1,0 +1,191 @@
+{
+  "ProfileId": "tecno-camon30-premier-cl9",
+  "Manufacturer": "TECNO",
+  "MarketingName": "TECNO CAMON 30 Premier 5G",
+  "ModelCodes": [
+    "CL9",
+    "TECNO CL9"
+  ],
+  "Codename": "TECNO-CL9",
+  "UiSkin": "HiOS 14 / 15 / 16",
+  "ChipsetVendor": "MediaTek",
+  "ChipsetFamily": "MediaTek Dimensity 8200 Ultimate",
+  "ChipsetCode": "MT6896",
+  "StorageType": "UFS 3.1",
+  "PartitionScheme": "Virtual A/B Dynamic (GKI 2.0 init_boot)",
+  "MinAndroidVersion": 14,
+  "MaxVerifiedAndroidVersion": 16,
+  "Android16NotesApplicable": true,
+  "Android16CompatibilityNote": "Uses GKI 2.0 split boot/init_boot architecture and Virtual A/B v3 snapshots; verify pending OTA merge state via snapshotctl before bootloader unlock or fastbootd resize.",
+  "BromSlaDaaEnforced": true,
+  "UnisocSignedFdlEnforced": false,
+  "BootloaderPolicy": {
+    "OemUnlockToggleSupported": true,
+    "RequiresFastbootFlashingUnlock": true,
+    "UsesLegacyOemUnlock": false,
+    "RequiresManufacturerToken": false,
+    "SupportsFastbootdLogicalFlashing": true,
+    "RequiresAvbVbmetaDisableConfirmation": true,
+    "UnlockCommand": "fastboot flashing unlock",
+    "Prerequisites": [
+      "Enable Developer Options and toggle ON \u0027OEM unlocking\u0027 in HiOS Settings.",
+      "Ensure no pending Virtual A/B OTA merge is incomplete.",
+      "Battery charge \u003E= 50% and signed Google/WinUSB fastboot interface installed."
+    ],
+    "DeviceSpecificSteps": [
+      "1. Connect over authorized ADB and run \u0027Reboot to Bootloader\u0027 (or hold Vol- while powering on).",
+      "2. Confirm fastboot enumerates as \u0027TECNO-CL9\u0027 in bootloader mode (is-userspace: no).",
+      "3. Issue \u0027fastboot flashing unlock\u0027 and press Volume Up on the handset prompt within 15 seconds.",
+      "4. Allow mandatory userdata cryptographic wipe to complete before rebooting."
+    ],
+    "DataLossAndSecurityWarnings": [
+      "Unlocking erases ALL user data (photos, messages, credentials) via hardware key destruction.",
+      "AVB Verified Boot transitions to ORANGE state with boot warning banner.",
+      "Widevine DRM degrades from L1 to L3 and Play Integrity strong attestation will fail."
+    ]
+  },
+  "ProtectedPartitions": [
+    "nvram",
+    "nvdata",
+    "nvcfg",
+    "persist",
+    "proinfo",
+    "protect1",
+    "protect2",
+    "seccfg",
+    "otp",
+    "preloader"
+  ],
+  "KnownPartitions": [
+    {
+      "PartitionName": "boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "init_boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "init_boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "vendor_boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vendor_boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vbmeta_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "vbmeta_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8388608
+    },
+    {
+      "PartitionName": "dtbo_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 33554432
+    },
+    {
+      "PartitionName": "super",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 9663676416
+    },
+    {
+      "PartitionName": "system_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 5368709120
+    },
+    {
+      "PartitionName": "vendor_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 1610612736
+    },
+    {
+      "PartitionName": "product_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 2684354560
+    },
+    {
+      "PartitionName": "nvram",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "nvdata",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "persist",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 67108864
+    }
+  ],
+  "SupportedModes": [
+    "AdbAuthorized",
+    "Recovery",
+    "AdbSideload",
+    "FastbootBootloader",
+    "FastbootdUserspace",
+    "MediaTekPreloader",
+    "MediaTekBrom",
+    "MediaTekMeta"
+  ],
+  "VerificationLevel": "ReferenceSpecification",
+  "HardwareVerification": {
+    "IsHardwareVerified": false,
+    "TestedBy": null,
+    "TestedAtUtc": null,
+    "TestedBuildFingerprint": null,
+    "VerificationNotes": "Reference engineering specification based on documented MT6896 GKI 2.0 / HiOS partition layout. Attach bench verification record to promote to HardwareVerified."
+  }
+}

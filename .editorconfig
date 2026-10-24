@@ -1,0 +1,24 @@
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{yml,yaml,json,xaml,csproj,props}]
+indent_size = 2
+
+[*.cs]
+# Internal diagnostic formatting intentionally uses standard string interpolation; generic factory methods on TrackedValue<T> are ergonomic by design
+dotnet_diagnostic.CA1305.severity = none
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1310.severity = none
+dotnet_diagnostic.CA1000.severity = none
+dotnet_diagnostic.CA1031.severity = none
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1716.severity = none
+
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none

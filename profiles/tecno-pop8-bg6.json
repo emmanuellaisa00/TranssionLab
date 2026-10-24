@@ -1,0 +1,143 @@
+{
+  "ProfileId": "tecno-pop8-bg6",
+  "Manufacturer": "TECNO",
+  "MarketingName": "TECNO POP 8",
+  "ModelCodes": [
+    "BG6",
+    "BG6i",
+    "TECNO BG6"
+  ],
+  "Codename": "TECNO-BG6",
+  "UiSkin": "HiOS 13 Go",
+  "ChipsetVendor": "Unisoc",
+  "ChipsetFamily": "Unisoc Tiger T606",
+  "ChipsetCode": "UMS9230",
+  "StorageType": "UFS 2.2 / eMMC 5.1",
+  "PartitionScheme": "A/B Dynamic",
+  "MinAndroidVersion": 13,
+  "MaxVerifiedAndroidVersion": 14,
+  "Android16NotesApplicable": false,
+  "Android16CompatibilityNote": null,
+  "BromSlaDaaEnforced": false,
+  "UnisocSignedFdlEnforced": true,
+  "BootloaderPolicy": {
+    "OemUnlockToggleSupported": true,
+    "RequiresFastbootFlashingUnlock": false,
+    "UsesLegacyOemUnlock": false,
+    "RequiresManufacturerToken": true,
+    "SupportsFastbootdLogicalFlashing": true,
+    "RequiresAvbVbmetaDisableConfirmation": true,
+    "UnlockCommand": "fastboot flashing unlock (restricted on Unisoc Secure Boot without OEM signature token)",
+    "Prerequisites": [
+      "Unisoc UMS9230 bootloaders typically enforce RSA identifier token signing (\u0027fastboot oem get_identifier_token\u0027).",
+      "Standard unauthenticated \u0027fastboot flashing unlock\u0027 is commonly rejected by Unisoc U-Boot unless signed token is supplied."
+    ],
+    "DeviceSpecificSteps": [
+      "1. Enter fastbootd or bootloader to inspect \u0027fastboot oem get_identifier_token\u0027 availability.",
+      "2. Do NOT use third-party modified FDL exploits; use official signed PAC packages in ResearchDownload when authorized."
+    ],
+    "DataLossAndSecurityWarnings": [
+      "Modifying prodnv or l_fixnv1/2 permanently corrupts IMEI/RF calibration.",
+      "Unisoc Download Mode requires vendor-signed fdl1-sign.bin and fdl2-sign.bin."
+    ]
+  },
+  "ProtectedPartitions": [
+    "prodnv",
+    "miscdata",
+    "persist",
+    "PhaseCheck",
+    "l_fixnv1",
+    "l_fixnv2",
+    "l_runtimenv1",
+    "splloader"
+  ],
+  "KnownPartitions": [
+    {
+      "PartitionName": "boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vendor_boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vbmeta_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 1048576
+    },
+    {
+      "PartitionName": "vbmeta_system_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 1048576
+    },
+    {
+      "PartitionName": "super",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8589934592
+    },
+    {
+      "PartitionName": "system_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 4294967296
+    },
+    {
+      "PartitionName": "product_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 2147483648
+    },
+    {
+      "PartitionName": "prodnv",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 10485760
+    },
+    {
+      "PartitionName": "miscdata",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 1048576
+    }
+  ],
+  "SupportedModes": [
+    "AdbAuthorized",
+    "Recovery",
+    "AdbSideload",
+    "FastbootBootloader",
+    "FastbootdUserspace",
+    "UnisocDownload",
+    "UnisocDiag"
+  ],
+  "VerificationLevel": "ReferenceSpecification",
+  "HardwareVerification": {
+    "IsHardwareVerified": false,
+    "TestedBy": null,
+    "TestedAtUtc": null,
+    "TestedBuildFingerprint": null,
+    "VerificationNotes": "Documented Unisoc T606 reference profile."
+  }
+}

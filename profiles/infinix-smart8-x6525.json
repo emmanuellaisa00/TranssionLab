@@ -1,0 +1,141 @@
+{
+  "ProfileId": "infinix-smart8-x6525",
+  "Manufacturer": "Infinix",
+  "MarketingName": "Infinix SMART 8",
+  "ModelCodes": [
+    "X6525",
+    "X6525B",
+    "Infinix X6525"
+  ],
+  "Codename": "Infinix-X6525",
+  "UiSkin": "XOS 13",
+  "ChipsetVendor": "Unisoc",
+  "ChipsetFamily": "Unisoc Tiger T606",
+  "ChipsetCode": "UMS9230",
+  "StorageType": "UFS 2.2 / eMMC 5.1",
+  "PartitionScheme": "A/B Dynamic",
+  "MinAndroidVersion": 13,
+  "MaxVerifiedAndroidVersion": 14,
+  "Android16NotesApplicable": false,
+  "Android16CompatibilityNote": null,
+  "BromSlaDaaEnforced": false,
+  "UnisocSignedFdlEnforced": true,
+  "BootloaderPolicy": {
+    "OemUnlockToggleSupported": true,
+    "RequiresFastbootFlashingUnlock": false,
+    "UsesLegacyOemUnlock": false,
+    "RequiresManufacturerToken": true,
+    "SupportsFastbootdLogicalFlashing": true,
+    "RequiresAvbVbmetaDisableConfirmation": true,
+    "UnlockCommand": "Requires signed Unisoc identifier token",
+    "Prerequisites": [
+      "Unisoc Secure Boot enforces RSA token verification for bootloader unlock."
+    ],
+    "DeviceSpecificSteps": [
+      "1. Inspect Unisoc PAC firmware via Firmware Explorer to verify signed FDL1/FDL2 presence.",
+      "2. Use authorized OTA sideload or signed ResearchDownload workflow for stock restoration."
+    ],
+    "DataLossAndSecurityWarnings": [
+      "Never overwrite prodnv or calibration partitions."
+    ]
+  },
+  "ProtectedPartitions": [
+    "prodnv",
+    "miscdata",
+    "persist",
+    "PhaseCheck",
+    "l_fixnv1",
+    "l_fixnv2",
+    "l_runtimenv1",
+    "splloader"
+  ],
+  "KnownPartitions": [
+    {
+      "PartitionName": "boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "boot_b",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vendor_boot_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 67108864
+    },
+    {
+      "PartitionName": "vbmeta_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 1048576
+    },
+    {
+      "PartitionName": "vbmeta_system_a",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 1048576
+    },
+    {
+      "PartitionName": "super",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 8589934592
+    },
+    {
+      "PartitionName": "system_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 4294967296
+    },
+    {
+      "PartitionName": "product_a",
+      "IsLogicalInSuper": true,
+      "IsProtectedRadioOrNv": false,
+      "IsBootCritical": true,
+      "MaxExpectedBytes": 2147483648
+    },
+    {
+      "PartitionName": "prodnv",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 10485760
+    },
+    {
+      "PartitionName": "miscdata",
+      "IsLogicalInSuper": false,
+      "IsProtectedRadioOrNv": true,
+      "IsBootCritical": false,
+      "MaxExpectedBytes": 1048576
+    }
+  ],
+  "SupportedModes": [
+    "AdbAuthorized",
+    "Recovery",
+    "AdbSideload",
+    "FastbootBootloader",
+    "FastbootdUserspace",
+    "UnisocDownload",
+    "UnisocDiag"
+  ],
+  "VerificationLevel": "ReferenceSpecification",
+  "HardwareVerification": {
+    "IsHardwareVerified": false,
+    "TestedBy": null,
+    "TestedAtUtc": null,
+    "TestedBuildFingerprint": null,
+    "VerificationNotes": "Documented Unisoc T606 reference profile."
+  }
+}

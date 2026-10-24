@@ -1,0 +1,15 @@
+<Application x:Class="TranssionLab.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Themes/FluentDarkTheme.xaml" />
+        <ResourceDictionary Source="Views/OverviewTemplates.xaml" />
+        <ResourceDictionary Source="Views/ProtocolTemplates.xaml" />
+        <ResourceDictionary Source="Views/FirmwareTemplates.xaml" />
+        <ResourceDictionary Source="Views/TelemetryTemplates.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

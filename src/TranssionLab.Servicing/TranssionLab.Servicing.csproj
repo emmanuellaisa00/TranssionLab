@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>TranssionLab.Servicing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TranssionLab.Core\TranssionLab.Core.csproj" />
+    <ProjectReference Include="..\TranssionLab.Logging\TranssionLab.Logging.csproj" />
+    <ProjectReference Include="..\TranssionLab.Profiles\TranssionLab.Profiles.csproj" />
+    <ProjectReference Include="..\TranssionLab.Protocols\TranssionLab.Protocols.csproj" />
+    <ProjectReference Include="..\TranssionLab.Firmware\TranssionLab.Firmware.csproj" />
+  </ItemGroup>
+</Project>

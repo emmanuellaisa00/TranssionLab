@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>TranssionLab.Firmware</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.IO.Hashing" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\TranssionLab.Core\TranssionLab.Core.csproj" />
+    <ProjectReference Include="..\TranssionLab.Logging\TranssionLab.Logging.csproj" />
+    <ProjectReference Include="..\TranssionLab.Profiles\TranssionLab.Profiles.csproj" />
+  </ItemGroup>
+</Project>

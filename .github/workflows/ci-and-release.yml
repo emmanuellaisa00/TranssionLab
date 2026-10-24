@@ -1,0 +1,157 @@
+name: TranssionLab CI, Static Analysis & Windows Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  SOLUTION_FILE: TranssionLab.sln
+  APP_PROJECT: src/TranssionLab.App/TranssionLab.App.csproj
+
+jobs:
+  build-test-analyze:
+    name: Restore, Build, Static Analysis & Unit Tests
+    runs-on: windows-latest
+    steps:
+      - name: Checkout clean repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+
+      - name: Compile & run Roslyn static analyzers (Warnings as Errors)
+        run: dotnet build ${{ env.SOLUTION_FILE }} --configuration Release --no-restore -warnaserror
+
+      - name: Run automated simulated unit & protocol tests
+        run: dotnet test ${{ env.SOLUTION_FILE }} --configuration Release --no-build --filter "Category=SimulatedUnit" --logger "trx;LogFileName=test-results.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-trx
+          path: '**/TestResults/*.trx'
+
+  package-windows:
+    name: Publish Self-Contained Windows (${{ matrix.rid }})
+    needs: build-test-analyze
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [ win-x64, win-arm64 ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Determine release version
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -like "refs/tags/v*") {
+            $v = "${{ github.ref_name }}".TrimStart('v')
+          } else {
+            $v = "1.0.0-ci.${{ github.run_number }}"
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Publish self-contained Windows executable (${{ matrix.rid }})
+        shell: pwsh
+        run: |
+          dotnet publish ${{ env.APP_PROJECT }} `
+            --configuration Release `
+            --runtime ${{ matrix.rid }} `
+            --self-contained true `
+            -p:Version=${{ steps.ver.outputs.version }} `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            --output publish_stage/${{ matrix.rid }}
+
+      - name: Assemble redistributable bundle & generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $pkgName = "TranssionLab-v${{ steps.ver.outputs.version }}-${{ matrix.rid }}"
+          $bundleDir = "dist/$pkgName"
+          New-Item -ItemType Directory -Force -Path "$bundleDir/profiles", "$bundleDir/docs", "$bundleDir/tools" | Out-Null
+
+          Copy-Item "publish_stage/${{ matrix.rid }}/TranssionLab.exe" "$bundleDir/"
+          Copy-Item "profiles/*.json" "$bundleDir/profiles/" -ErrorAction SilentlyContinue
+          Copy-Item "docs/*.md" "$bundleDir/docs/"
+          Copy-Item "README.md" "$bundleDir/"
+
+          $toolsLines = @(
+            "Android SDK Platform-Tools (adb.exe / fastboot.exe) Placement",
+            "=============================================================",
+            "Place official Apache-2.0 licensed Android SDK Platform-Tools (adb.exe, fastboot.exe,",
+            "AdbWinApi.dll, AdbWinUsbApi.dll) in this folder or on your Windows PATH, or configure",
+            "their exact location in TranssionLab -> Page #17 (Settings).",
+            "Official Google download: https://developer.android.com/tools/releases/platform-tools"
+          )
+          $toolsLines | Set-Content -Encoding UTF8 "$bundleDir/tools/README-TOOLS.txt"
+
+          New-Item -ItemType Directory -Force -Path "releases" | Out-Null
+          $zipPath = "releases/$pkgName.zip"
+          Compress-Archive -Path "$bundleDir/*" -DestinationPath $zipPath -Force
+
+          $hash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $pkgName.zip" | Set-Content -Encoding ASCII "$zipPath.sha256"
+          Write-Host "Generated $zipPath (SHA-256: $hash)"
+
+      - name: Upload packaged Windows artifact (${{ matrix.rid }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: TranssionLab-${{ matrix.rid }}
+          path: |
+            releases/*.zip
+            releases/*.sha256
+
+  github-release:
+    name: Publish Versioned GitHub Release
+    needs: package-windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packaged Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: TranssionLab-*
+          path: release_assets
+          merge-multiple: true
+
+      - name: Combine SHA256SUMS.txt
+        run: |
+          cd release_assets
+          ls -lh
+          cat *.sha256 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release_assets/*.zip
+            release_assets/*.sha256
+            release_assets/SHA256SUMS.txt

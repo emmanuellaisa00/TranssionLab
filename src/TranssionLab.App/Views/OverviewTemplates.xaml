@@ -1,0 +1,343 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:pages="clr-namespace:TranssionLab.ViewModels.Pages;assembly=TranssionLab.ViewModels">
+
+  <!-- PAGE 1: UNIFIED CONNECTION DASHBOARD (Section 3) -->
+  <DataTemplate DataType="{x:Type pages:DashboardViewModel}">
+    <StackPanel>
+      <Border Style="{StaticResource FluentCardStyle}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Scan Transports" Command="{Binding RefreshDashboardCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+          <StackPanel>
+            <TextBlock Text="Unified Device Connection Dashboard" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,4" />
+            <TextBlock Text="Distinguishes DETECTED, INFERRED, and VERIFIED device attributes. Exact models are never inferred from chipset alone."
+                       Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <!-- Empty / Multi-Device Warning State -->
+      <Border Style="{StaticResource FluentCardStyle}" Visibility="{Binding HasActiveDevice, Converter={StaticResource InvBoolToVis}}">
+        <StackPanel HorizontalAlignment="Center" Margin="20">
+          <TextBlock Text="◈" FontSize="32" Foreground="{StaticResource AccentCyanBrush}" HorizontalAlignment="Center" Margin="0,0,0,8" />
+          <TextBlock Text="{Binding EmptyStateMessage}" Foreground="{StaticResource PrimaryTextBrush}" FontSize="13.5" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="620" />
+        </StackPanel>
+      </Border>
+
+      <!-- Active Device Identity & Provenance Grid -->
+      <Border Style="{StaticResource FluentCardStyle}" Visibility="{Binding HasActiveDevice, Converter={StaticResource BoolToVis}}">
+        <StackPanel DataContext="{Binding ActiveDevice}">
+          <DockPanel Margin="0,0,0,12">
+            <Border DockPanel.Dock="Right" Background="{Binding DashboardState, Converter={StaticResource StateBrush}}" CornerRadius="4" Padding="10,4">
+              <TextBlock Text="{Binding DashboardState}" Foreground="#FFFFFF" FontWeight="Bold" FontSize="12" />
+            </Border>
+            <TextBlock Text="{Binding ExactModel.DisplayText}" Foreground="{StaticResource PrimaryTextBrush}" FontSize="18" FontWeight="Bold" />
+          </DockPanel>
+
+          <UniformGrid Columns="3">
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="Manufacturer" Style="{StaticResource FieldLabelStyle}" />
+              <WrapPanel>
+                <TextBlock Text="{Binding Manufacturer.DisplayText}" Foreground="{StaticResource PrimaryTextBrush}" FontWeight="SemiBold" Margin="0,0,6,0" />
+                <Border Background="{Binding Manufacturer.BadgeText, Converter={StaticResource ProvenanceBrush}}" CornerRadius="3" Padding="5,1">
+                  <TextBlock Text="{Binding Manufacturer.BadgeText}" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" />
+                </Border>
+              </WrapPanel>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="Exact Model &amp; Confidence" Style="{StaticResource FieldLabelStyle}" />
+              <WrapPanel>
+                <TextBlock Text="{Binding ExactModel.DisplayText}" Foreground="{StaticResource PrimaryTextBrush}" FontWeight="SemiBold" Margin="0,0,6,0" TextWrapping="Wrap" />
+                <Border Background="{Binding ExactModel.BadgeText, Converter={StaticResource ProvenanceBrush}}" CornerRadius="3" Padding="5,1">
+                  <TextBlock Text="{Binding ExactModel.BadgeText}" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" />
+                </Border>
+              </WrapPanel>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="Aliases &amp; Codename" Style="{StaticResource FieldLabelStyle}" />
+              <TextBlock Foreground="{StaticResource PrimaryTextBrush}">
+                <Run Text="{Binding ModelAliases.DisplayText, Mode=OneWay}" />
+                <Run Text=" / " Foreground="{StaticResource MutedTextBrush}" />
+                <Run Text="{Binding Codename.DisplayText, Mode=OneWay}" />
+              </TextBlock>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="Chipset Family" Style="{StaticResource FieldLabelStyle}" />
+              <WrapPanel>
+                <TextBlock Text="{Binding ChipsetFamily.DisplayText}" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,6,0" TextWrapping="Wrap" />
+                <Border Background="{Binding ChipsetFamily.BadgeText, Converter={StaticResource ProvenanceBrush}}" CornerRadius="3" Padding="5,1">
+                  <TextBlock Text="{Binding ChipsetFamily.BadgeText}" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" />
+                </Border>
+              </WrapPanel>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="Android Version" Style="{StaticResource FieldLabelStyle}" />
+              <TextBlock Text="{Binding AndroidVersion.DisplayText}" Foreground="{StaticResource PrimaryTextBrush}" />
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="USB VID:PID &amp; Active Mode" Style="{StaticResource FieldLabelStyle}" />
+              <TextBlock Foreground="{StaticResource AccentCyanBrush}" FontFamily="{StaticResource MonoFont}">
+                <Run Text="{Binding UsbIdsDisplay, Mode=OneWay}" />
+                <Run Text=" | " />
+                <Run Text="{Binding ActiveConnectionMode, Mode=OneWay}" />
+              </TextBlock>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="Authorization Status" Style="{StaticResource FieldLabelStyle}" />
+              <TextBlock Text="{Binding AuthorizationStatus}" Foreground="{StaticResource PrimaryTextBrush}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="Bootloader State" Style="{StaticResource FieldLabelStyle}" />
+              <WrapPanel>
+                <TextBlock Text="{Binding BootloaderState.DisplayText}" Foreground="{StaticResource PrimaryTextBrush}" Margin="0,0,6,0" />
+                <Border Background="{Binding BootloaderState.BadgeText, Converter={StaticResource ProvenanceBrush}}" CornerRadius="3" Padding="5,1">
+                  <TextBlock Text="{Binding BootloaderState.BadgeText}" Foreground="#FFFFFF" FontSize="10" FontWeight="Bold" />
+                </Border>
+              </WrapPanel>
+            </StackPanel>
+
+            <StackPanel Margin="0,0,12,12">
+              <TextBlock Text="Last Connection Event" Style="{StaticResource FieldLabelStyle}" />
+              <TextBlock Text="{Binding LastConnectionEvent}" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" />
+            </StackPanel>
+          </UniformGrid>
+
+          <TextBlock Text="Build Fingerprint" Style="{StaticResource FieldLabelStyle}" />
+          <TextBlock Text="{Binding BuildFingerprint.DisplayText}" Foreground="{StaticResource SecondaryTextBrush}" FontFamily="{StaticResource MonoFont}" FontSize="11.5" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <!-- Operations Permitted For Active Device & Protocol -->
+      <Border Style="{StaticResource FluentCardStyle}" Visibility="{Binding HasActiveDevice, Converter={StaticResource BoolToVis}}">
+        <StackPanel>
+          <TextBlock Text="Permitted Operations for Selected Device &amp; Protocol" Style="{StaticResource SectionHeadingStyle}" />
+          <DataGrid ItemsSource="{Binding AvailableOperations}" MaxHeight="220">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Category" Binding="{Binding Operation.Category}" Width="100" />
+              <DataGridTextColumn Header="Operation" Binding="{Binding Operation.DisplayName}" Width="260" />
+              <DataGridTextColumn Header="Modifies State" Binding="{Binding Operation.ModifiesDeviceState}" Width="105" />
+              <DataGridTextColumn Header="Destructive" Binding="{Binding Operation.IsDestructive}" Width="90" />
+              <DataGridTextColumn Header="Verification Method" Binding="{Binding Operation.VerificationMethod}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </StackPanel>
+      </Border>
+
+      <!-- Protocol Subsystem Status Matrix -->
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="Protocol Provider Subsystem Matrix (Real Implementation Status)" Style="{StaticResource SectionHeadingStyle}" />
+          <DataGrid ItemsSource="{Binding ProviderSummaries}" MaxHeight="260">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Protocol Provider" Binding="{Binding ProviderName}" Width="210" />
+              <DataGridTextColumn Header="Implementation Status" Binding="{Binding ImplementationStatus}" Width="190" />
+              <DataGridTextColumn Header="Verification" Binding="{Binding VerificationLevel}" Width="170" />
+              <DataGridTextColumn Header="Dependencies &amp; Capability Scope" Binding="{Binding DependencySummary}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+
+  <!-- PAGE 2: CONNECTION MANAGER -->
+  <DataTemplate DataType="{x:Type pages:ConnectionManagerViewModel}">
+    <StackPanel>
+      <Border Style="{StaticResource FluentCardStyle}">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+            <Button Content="Bind Selected Target" Command="{Binding ConfirmExplicitSelectionCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" />
+            <Button Content="Clear Selection" Command="{Binding ClearSelectionCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
+            <Button Content="Rescan USB &amp; Ports" Command="{Binding ScanAllTransportsCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+          </StackPanel>
+          <StackPanel>
+            <TextBlock Text="Explicit Multi-Device Selector &amp; USB/PnP Diagnostics" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,4" />
+            <TextBlock Text="When multiple phones are connected, TranssionLab never silently picks a target. Highlight a device below and click Bind Selected Target."
+                       Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="Discovered Logical Device Endpoints" Style="{StaticResource SectionHeadingStyle}" />
+          <DataGrid ItemsSource="{Binding DiscoveredDevices}" SelectedItem="{Binding HighlightedDevice}" MaxHeight="190">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Device Key" Binding="{Binding DeviceKey}" Width="180" />
+              <DataGridTextColumn Header="Mode" Binding="{Binding ActiveConnectionMode}" Width="150" />
+              <DataGridTextColumn Header="State" Binding="{Binding DashboardState}" Width="150" />
+              <DataGridTextColumn Header="Model" Binding="{Binding ExactModel.DisplayText}" Width="220" />
+              <DataGridTextColumn Header="Authorization" Binding="{Binding AuthorizationStatus}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="USB VID/PID/MI Inventory &amp; Windows Driver Health" Style="{StaticResource SectionHeadingStyle}" />
+          <DataGrid ItemsSource="{Binding UsbInterfaces}" MaxHeight="220">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="VID:PID:MI" Binding="{Binding VidPidDisplay}" Width="170" />
+              <DataGridTextColumn Header="Friendly Name" Binding="{Binding FriendlyName}" Width="220" />
+              <DataGridTextColumn Header="COM Port" Binding="{Binding AssociatedComPort}" Width="85" />
+              <DataGridTextColumn Header="Classified Mode" Binding="{Binding ClassifiedMode}" Width="150" />
+              <DataGridTextColumn Header="Driver Status" Binding="{Binding DriverDiagnostics.Status}" Width="155" />
+              <DataGridTextColumn Header="Safe Driver Remediation Guidance" Binding="{Binding DriverDiagnostics.SafeRemediationGuidance}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </StackPanel>
+      </Border>
+
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="14" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Border Grid.Column="0" Style="{StaticResource FluentCardStyle}">
+          <StackPanel>
+            <TextBlock Text="Enumerated Windows COM Ports" Style="{StaticResource SectionHeadingStyle}" />
+            <DataGrid ItemsSource="{Binding ComPorts}" MaxHeight="180">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Port" Binding="{Binding PortName}" Width="80" />
+                <DataGridTextColumn Header="Mode" Binding="{Binding SuspectedMode}" Width="140" />
+                <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*" />
+              </DataGrid.Columns>
+            </DataGrid>
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="2" Style="{StaticResource FluentCardStyle}">
+          <StackPanel>
+            <TextBlock Text="USB Arrival / Removal History" Style="{StaticResource SectionHeadingStyle}" />
+            <DataGrid ItemsSource="{Binding ConnectionHistory}" MaxHeight="180">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Event" Binding="{Binding EventKind}" Width="110" />
+                <DataGridTextColumn Header="VID:PID" Binding="{Binding VidPid}" Width="140" />
+                <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*" />
+              </DataGrid.Columns>
+            </DataGrid>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </StackPanel>
+  </DataTemplate>
+
+  <!-- PAGE 3: DEVICE EXPLORER -->
+  <DataTemplate DataType="{x:Type pages:DeviceExplorerViewModel}">
+    <StackPanel>
+      <Border Style="{StaticResource FluentCardStyle}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox Grid.Column="0" Text="{Binding PropertyFilter, UpdateSourceTrigger=PropertyChanged}" ToolTip="Filter property keys or values" />
+          <TextBox Grid.Column="2" Text="{Binding ExportPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+          <Button Grid.Column="3" Content="Export Snapshot JSON" Command="{Binding ExportDeviceSnapshotJsonCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+        </Grid>
+      </Border>
+
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="Hardware, Bootloader &amp; OS Property Inspector" Style="{StaticResource SectionHeadingStyle}" />
+          <DataGrid ItemsSource="{Binding FilteredProperties}" Height="470">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Provenance" Binding="{Binding Provenance}" Width="110" />
+              <DataGridTextColumn Header="Property / Variable Key" Binding="{Binding Key}" Width="290" />
+              <DataGridTextColumn Header="Reported Value" Binding="{Binding Value}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+
+  <!-- PAGE 4: ADB MANAGER & RECOVERY SIDELOAD -->
+  <DataTemplate DataType="{x:Type pages:AdbManagerViewModel}">
+    <StackPanel>
+      <Border Style="{StaticResource FluentCardStyle}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Re-Check ADB Binary" Command="{Binding CheckAdbToolCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+          <StackPanel>
+            <TextBlock Text="Android Debug Bridge (ADB) &amp; Recovery Sideload" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,4" />
+            <TextBlock Text="{Binding ToolStatus}" Foreground="{StaticResource AccentCyanBrush}" FontFamily="{StaticResource MonoFont}" FontSize="12" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <!-- Operations gated on Authorized ADB / Recovery -->
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="Authorized ADB Operations (Enabled only when selected device is in Authorized ADB / Recovery mode)" Style="{StaticResource SectionHeadingStyle}" />
+          <WrapPanel Margin="0,0,0,10">
+            <Button Content="Capture Battery &amp; Storage Telemetry" Command="{Binding ReadBatteryAndStorageCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Reboot System" Command="{Binding RebootSystemCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Reboot Bootloader (Fastboot)" Command="{Binding RebootBootloaderCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Reboot Fastbootd (Userspace)" Command="{Binding RebootFastbootdCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Reboot Recovery" Command="{Binding RebootRecoveryCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+          </WrapPanel>
+
+          <TextBlock Text="Verified Recovery OTA Sideload (Enabled only when selected device is in ADB Sideload mode)" Style="{StaticResource FieldLabelStyle}" />
+          <Grid Margin="0,4,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding OtaSideloadPath, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+            <Button Grid.Column="1" Content="Browse OTA ZIP..." Command="{Binding BrowseOtaZipCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
+            <Button Grid.Column="2" Content="Stream Sideload Package" Command="{Binding RunSideloadCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+          </Grid>
+
+          <TextBlock Text="Command &amp; Telemetry Output" Style="{StaticResource FieldLabelStyle}" />
+          <TextBox Text="{Binding DiagnosticOutput, Mode=OneWay}" IsReadOnly="True" Height="250" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="{StaticResource MonoFont}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+
+  <!-- PAGE 5: FASTBOOT & FASTBOOTD MANAGER -->
+  <DataTemplate DataType="{x:Type pages:FastbootManagerViewModel}">
+    <StackPanel>
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <TextBlock Text="Fastboot &amp; Userspace Fastbootd Manager" Style="{StaticResource SectionHeadingStyle}" Margin="0,0,0,4" />
+          <TextBlock Text="{Binding ActiveSubModeLabel}" Foreground="{StaticResource AccentCyanBrush}" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <TextBlock Text="{Binding ToolStatus}" Foreground="{StaticResource SecondaryTextBrush}" FontFamily="{StaticResource MonoFont}" FontSize="11.5" />
+        </StackPanel>
+      </Border>
+
+      <Border Style="{StaticResource FluentCardStyle}">
+        <StackPanel>
+          <WrapPanel Margin="0,0,0,12">
+            <Button Content="Query Bootloader Variables (getvar)" Command="{Binding QueryVariablesCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Set Active Slot A" Command="{Binding SetSlotACommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Set Active Slot B" Command="{Binding SetSlotBCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Reboot System" Command="{Binding RebootSystemCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Reboot Bootloader" Command="{Binding RebootBootloaderCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+            <Button Content="Enter Userspace Fastbootd" Command="{Binding RebootFastbootdCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,8" />
+          </WrapPanel>
+
+          <DataGrid ItemsSource="{Binding FastbootVariables}" Height="360">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Provenance" Binding="{Binding Provenance}" Width="110" />
+              <DataGridTextColumn Header="Fastboot Variable" Binding="{Binding Key}" Width="260" />
+              <DataGridTextColumn Header="Reported Value" Binding="{Binding Value}" Width="*" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </DataTemplate>
+
+</ResourceDictionary>
