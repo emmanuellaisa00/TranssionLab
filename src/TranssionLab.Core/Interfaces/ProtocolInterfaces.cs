@@ -21,13 +21,33 @@ public interface IUsbInterfaceProvider
 public interface IDeviceDiscoveryProvider
 {
     event EventHandler? InventoryChanged;
+    event EventHandler<string?>? WaitingStatusChanged;
+
     IReadOnlyList<ConnectedDeviceSnapshot> ConnectedDevices { get; }
     ConnectedDeviceSnapshot? SelectedDevice { get; }
     bool RequiresExplicitSelection { get; }
+    bool IsWaitingForDevice { get; }
+    string? WaitingStatusMessage { get; }
 
     Task<IReadOnlyList<ConnectedDeviceSnapshot>> RefreshInventoryAsync(CancellationToken ct = default);
     void SelectDeviceExplicitly(string? deviceKey);
     ConnectedDeviceSnapshot RequireExplicitlySelectedDevice();
+    void CancelActiveWait();
+
+    Task<ConnectedDeviceSnapshot> WaitForDeviceAsync(
+        string activityName,
+        IReadOnlyCollection<ConnectionMode>? acceptedModes = null,
+        TimeSpan? timeout = null,
+        Action<string>? onProgress = null,
+        CancellationToken ct = default);
+
+    Task<DetectedUsbDevice> WaitForVendorUsbEndpointAsync(
+        string activityName,
+        Func<DetectedUsbDevice, bool> predicate,
+        string connectionHint,
+        TimeSpan? timeout = null,
+        Action<string>? onProgress = null,
+        CancellationToken ct = default);
 }
 
 public interface IAdbProvider
@@ -267,6 +287,10 @@ public interface IPartitionManager
 {
     Task<DevicePartitionTableSnapshot> ScanDevicePartitionsAsync(
         ConnectedDeviceSnapshot device,
+        CancellationToken ct = default);
+
+    Task<DevicePartitionTableSnapshot> LoadOfflinePartitionTableAsync(
+        string firmwareOrContainerPath,
         CancellationToken ct = default);
 
     Task<string> ExportPartitionTableJsonAsync(

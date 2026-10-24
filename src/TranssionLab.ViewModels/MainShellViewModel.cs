@@ -33,10 +33,23 @@ public sealed class MainShellViewModel : ObservableObject
         get => _currentPage;
         set
         {
-            if (SetProperty(ref _currentPage, value))
+            if (value is not null && SetProperty(ref _currentPage, value))
             {
-                _ = value.OnNavigatedToAsync();
+                _ = NavigateSafelyAsync(value);
             }
+        }
+    }
+
+    private async Task NavigateSafelyAsync(PageViewModelBase page)
+    {
+        try
+        {
+            await page.OnNavigatedToAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("MainShell", $"OnNavigatedTo({page.PageTitle})", ex.Message);
+            page.StatusBanner = ex.Message;
         }
     }
 
@@ -57,15 +70,34 @@ public sealed class MainShellViewModel : ObservableObject
 
     public bool RequiresExplicitSelectionBanner => _discovery.RequiresExplicitSelection;
 
+    private string? _waitingBannerMessage;
+    public string? WaitingBannerMessage
+    {
+        get => _waitingBannerMessage;
+        private set
+        {
+            if (SetProperty(ref _waitingBannerMessage, value))
+            {
+                OnPropertyChanged(nameof(IsWaitingForDevice));
+                OnPropertyChanged(nameof(GlobalConnectionHeadline));
+                CancelWaitingCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsWaitingForDevice => !string.IsNullOrWhiteSpace(WaitingBannerMessage);
+
     public string GlobalConnectionHeadline
     {
         get
         {
+            if (!string.IsNullOrWhiteSpace(WaitingBannerMessage))
+                return WaitingBannerMessage!;
             if (_discovery.RequiresExplicitSelection)
                 return $"AMBIGUOUS ({_discovery.ConnectedDevices.Count} devices attached — select target explicitly)";
             var sel = _discovery.SelectedDevice;
             if (sel is null)
-                return "No active device connected";
+                return "No active device connected — Activities will wait for device connection automatically";
             return $"{sel.ExactModel.DisplayText} [{sel.ActiveConnectionMode}] — {sel.DashboardState}";
         }
     }
@@ -79,6 +111,7 @@ public sealed class MainShellViewModel : ObservableObject
 
     public AsyncRelayCommand GlobalScanDevicesCommand { get; }
     public RelayCommand NavigateToPageCommand { get; }
+    public RelayCommand CancelWaitingCommand { get; }
 
     public MainShellViewModel(
         IDeviceDiscoveryProvider discovery,
@@ -115,9 +148,25 @@ public sealed class MainShellViewModel : ObservableObject
 
         GlobalScanDevicesCommand = new AsyncRelayCommand(async () =>
         {
-            await _discovery.RefreshInventoryAsync().ConfigureAwait(true);
-            SyncDevicePicker();
+            try
+            {
+                CurrentPage.StatusBanner = "Scanning USB, ADB, and Fastboot transports...";
+                await _discovery.RefreshInventoryAsync().ConfigureAwait(true);
+                SyncDevicePicker();
+                CurrentPage.StatusBanner = _discovery.ConnectedDevices.Count > 0
+                    ? $"Detected {_discovery.ConnectedDevices.Count} endpoint(s)."
+                    : "No device currently connected. Start any activity to enter 'Waiting for device...' mode or connect USB.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("MainShell", "GlobalScanDevices", ex.Message);
+                CurrentPage.StatusBanner = $"Scan warning: {ex.Message}";
+            }
         });
+
+        CancelWaitingCommand = new RelayCommand(
+            () => _discovery.CancelActiveWait(),
+            () => IsWaitingForDevice);
 
         NavigateToPageCommand = new RelayCommand(param =>
         {
@@ -135,11 +184,20 @@ public sealed class MainShellViewModel : ObservableObject
             }
         });
 
-        _discovery.InventoryChanged += (_, _) => SyncDevicePicker();
-        _logger.EntryRecorded += (_, entry) =>
+        _discovery.InventoryChanged += (_, _) => UiInteractionBridge.RunOnUiThread(SyncDevicePicker);
+        _discovery.WaitingStatusChanged += (_, msg) => UiInteractionBridge.RunOnUiThread(() =>
+        {
+            WaitingBannerMessage = msg;
+            CurrentPage.IsWaitingForDevice = !string.IsNullOrWhiteSpace(msg);
+            if (!string.IsNullOrWhiteSpace(msg))
+            {
+                CurrentPage.StatusBanner = msg;
+            }
+        });
+        _logger.EntryRecorded += (_, entry) => UiInteractionBridge.RunOnUiThread(() =>
         {
             LatestLogLine = $"[{entry.TimestampUtc:HH:mm:ss}] [{entry.Severity}] {entry.ProtocolProvider}: {entry.RequestedAction}";
-        };
+        });
 
         SyncDevicePicker();
     }

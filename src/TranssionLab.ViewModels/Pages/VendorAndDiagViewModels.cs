@@ -9,6 +9,7 @@ namespace TranssionLab.ViewModels.Pages;
 // Page 6: MediaTek Tools (Section 2B)
 public sealed class MediaTekToolsViewModel : PageViewModelBase
 {
+    private readonly IDeviceDiscoveryProvider _discovery;
     private readonly IUsbInterfaceProvider _usb;
     private readonly IMediaTekProvider _mtk;
 
@@ -23,11 +24,7 @@ public sealed class MediaTekToolsViewModel : PageViewModelBase
     public string SelectedComPort
     {
         get => _selectedComPort;
-        set
-        {
-            if (SetProperty(ref _selectedComPort, value))
-                ProbeReadOnlyBromCommand.RaiseCanExecuteChanged();
-        }
+        set => SetProperty(ref _selectedComPort, value);
     }
 
     private MediaTekHandshakeProbeResult? _lastProbeResult;
@@ -40,29 +37,44 @@ public sealed class MediaTekToolsViewModel : PageViewModelBase
     public AsyncRelayCommand ScanMtkInterfacesCommand { get; }
     public AsyncRelayCommand ProbeReadOnlyBromCommand { get; }
 
-    public MediaTekToolsViewModel(IUsbInterfaceProvider usb, IMediaTekProvider mtk)
+    public MediaTekToolsViewModel(IDeviceDiscoveryProvider discovery, IUsbInterfaceProvider usb, IMediaTekProvider mtk)
     {
+        _discovery = discovery;
         _usb = usb;
         _mtk = mtk;
-        ScanMtkInterfacesCommand = new AsyncRelayCommand(RefreshMtkAsync);
-        ProbeReadOnlyBromCommand = new AsyncRelayCommand(
-            async () =>
-            {
-                IsBusy = true;
-                try
-                {
-                    LastProbeResult = await _mtk.ProbeReadOnlyBromOrPreloaderAsync(SelectedComPort).ConfigureAwait(true);
-                    StatusBanner = LastProbeResult.DiagnosticMessage;
-                }
-                finally
-                {
-                    IsBusy = false;
-                }
-            },
-            () => !string.IsNullOrWhiteSpace(SelectedComPort));
+        ScanMtkInterfacesCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(RefreshMtkAsync, "MediaTek USB scan failed"));
+        ProbeReadOnlyBromCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(ProbeWithWaitAsync, "MediaTek BROM probe failed"));
     }
 
-    public override async Task OnNavigatedToAsync(CancellationToken ct = default) => await RefreshMtkAsync().ConfigureAwait(true);
+    public override Task OnNavigatedToAsync(CancellationToken ct = default) =>
+        RunSafeActivityAsync(RefreshMtkAsync, "MediaTek USB scan failed");
+
+    private async Task ProbeWithWaitAsync()
+    {
+        var portToProbe = SelectedComPort?.Trim();
+        var activePorts = await _usb.EnumerateComPortsAsync().ConfigureAwait(true);
+
+        if (string.IsNullOrWhiteSpace(portToProbe) ||
+            !activePorts.Any(p => string.Equals(p.PortName, portToProbe, StringComparison.OrdinalIgnoreCase)))
+        {
+            var captured = await _discovery.WaitForVendorUsbEndpointAsync(
+                "MediaTek BROM / Preloader Probe",
+                u => u.DetectedChipsetVendor == ChipsetVendor.MediaTek &&
+                     !string.IsNullOrWhiteSpace(u.AssociatedComPort) &&
+                     u.ClassifiedMode is ConnectionMode.MediaTekBrom or ConnectionMode.MediaTekPreloader or ConnectionMode.MediaTekDownloadAgent,
+                "Power off phone, hold Vol- / Vol+ if required, and connect USB cable",
+                TimeSpan.FromSeconds(45),
+                CreateWaitProgressCallback()).ConfigureAwait(true);
+
+            portToProbe = captured.AssociatedComPort!;
+            SelectedComPort = portToProbe;
+            await RefreshMtkAsync().ConfigureAwait(true);
+        }
+
+        StatusBanner = $"Opening {portToProbe} for read-only MediaTek BROM/Preloader handshake...";
+        LastProbeResult = await _mtk.ProbeReadOnlyBromOrPreloaderAsync(portToProbe).ConfigureAwait(true);
+        StatusBanner = LastProbeResult.DiagnosticMessage;
+    }
 
     private async Task RefreshMtkAsync()
     {
@@ -79,13 +91,14 @@ public sealed class MediaTekToolsViewModel : PageViewModelBase
         }
         StatusBanner = filtered.Count > 0
             ? $"Detected {filtered.Count} MediaTek USB endpoint(s). Detection does NOT imply unrestricted storage/DA access."
-            : "No MediaTek BROM (0E8D:0003), Preloader (0E8D:2000), or DA (0E8D:2001) endpoints currently detected.";
+            : "No MediaTek BROM (0E8D:0003) or Preloader (0E8D:2000) attached yet — click 'Run Read-Only BROM Probe' to enter 'Waiting for device...' mode.";
     }
 }
 
 // Page 7: Dedicated META Mode Panel (Section 2D)
 public sealed class MetaModeViewModel : PageViewModelBase
 {
+    private readonly IDeviceDiscoveryProvider _discovery;
     private readonly IUsbInterfaceProvider _usb;
     private readonly IMetaModeProvider _meta;
 
@@ -103,11 +116,7 @@ public sealed class MetaModeViewModel : PageViewModelBase
     public MetaInterfaceDetection? SelectedMetaEndpoint
     {
         get => _selectedMetaEndpoint;
-        set
-        {
-            if (SetProperty(ref _selectedMetaEndpoint, value))
-                VerifyMetaSessionCommand.RaiseCanExecuteChanged();
-        }
+        set => SetProperty(ref _selectedMetaEndpoint, value);
     }
 
     private MetaSessionDiagnosticResult? _lastDiagnostic;
@@ -120,22 +129,36 @@ public sealed class MetaModeViewModel : PageViewModelBase
     public AsyncRelayCommand ScanMetaEndpointsCommand { get; }
     public AsyncRelayCommand VerifyMetaSessionCommand { get; }
 
-    public MetaModeViewModel(IUsbInterfaceProvider usb, IMetaModeProvider meta)
+    public MetaModeViewModel(IDeviceDiscoveryProvider discovery, IUsbInterfaceProvider usb, IMetaModeProvider meta)
     {
+        _discovery = discovery;
         _usb = usb;
         _meta = meta;
-        ScanMetaEndpointsCommand = new AsyncRelayCommand(RefreshMetaAsync);
-        VerifyMetaSessionCommand = new AsyncRelayCommand(
-            async () =>
-            {
-                if (SelectedMetaEndpoint is null) return;
-                LastDiagnostic = await _meta.DiagnoseMetaConnectionAsync(SelectedMetaEndpoint.UsbDevice).ConfigureAwait(true);
-                StatusBanner = LastDiagnostic.DiagnosticSummary;
-            },
-            () => SelectedMetaEndpoint is not null);
+        ScanMetaEndpointsCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(RefreshMetaAsync, "META scan failed"));
+        VerifyMetaSessionCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(VerifyMetaWithWaitAsync, "META verification failed"));
     }
 
-    public override async Task OnNavigatedToAsync(CancellationToken ct = default) => await RefreshMetaAsync().ConfigureAwait(true);
+    public override Task OnNavigatedToAsync(CancellationToken ct = default) =>
+        RunSafeActivityAsync(RefreshMetaAsync, "META scan failed");
+
+    private async Task VerifyMetaWithWaitAsync()
+    {
+        var target = SelectedMetaEndpoint?.UsbDevice;
+        if (target is null)
+        {
+            target = await _discovery.WaitForVendorUsbEndpointAsync(
+                "Verify MediaTek META Session",
+                u => u.ClassifiedMode == ConnectionMode.MediaTekMeta,
+                "Connect device in MediaTek META mode via USB",
+                TimeSpan.FromSeconds(45),
+                CreateWaitProgressCallback()).ConfigureAwait(true);
+            await RefreshMetaAsync().ConfigureAwait(true);
+        }
+
+        StatusBanner = $"Diagnosing META endpoint {target.VidPidDisplay}...";
+        LastDiagnostic = await _meta.DiagnoseMetaConnectionAsync(target).ConfigureAwait(true);
+        StatusBanner = LastDiagnostic.DiagnosticSummary;
+    }
 
     private async Task RefreshMetaAsync()
     {
@@ -150,13 +173,14 @@ public sealed class MetaModeViewModel : PageViewModelBase
 
         StatusBanner = detections.Count > 0
             ? $"Found {detections.Count} recognized META USB endpoint(s)."
-            : "No MediaTek META USB interface detected. Generic USB devices are never fabricated as META.";
+            : "No MediaTek META USB interface currently connected — click 'Verify Selected META Interface' to wait for a META device.";
     }
 }
 
 // Page 8: SPD / Unisoc Tools (Section 2C)
 public sealed class SpdUnisocToolsViewModel : PageViewModelBase
 {
+    private readonly IDeviceDiscoveryProvider _discovery;
     private readonly IUsbInterfaceProvider _usb;
     private readonly ISpdUnisocProvider _unisoc;
 
@@ -171,11 +195,7 @@ public sealed class SpdUnisocToolsViewModel : PageViewModelBase
     public string SelectedComPort
     {
         get => _selectedComPort;
-        set
-        {
-            if (SetProperty(ref _selectedComPort, value))
-                ProbeDownloadBannerCommand.RaiseCanExecuteChanged();
-        }
+        set => SetProperty(ref _selectedComPort, value);
     }
 
     private UnisocBootProbeResult? _lastProbeResult;
@@ -188,29 +208,43 @@ public sealed class SpdUnisocToolsViewModel : PageViewModelBase
     public AsyncRelayCommand ScanUnisocEndpointsCommand { get; }
     public AsyncRelayCommand ProbeDownloadBannerCommand { get; }
 
-    public SpdUnisocToolsViewModel(IUsbInterfaceProvider usb, ISpdUnisocProvider unisoc)
+    public SpdUnisocToolsViewModel(IDeviceDiscoveryProvider discovery, IUsbInterfaceProvider usb, ISpdUnisocProvider unisoc)
     {
+        _discovery = discovery;
         _usb = usb;
         _unisoc = unisoc;
-        ScanUnisocEndpointsCommand = new AsyncRelayCommand(RefreshUnisocAsync);
-        ProbeDownloadBannerCommand = new AsyncRelayCommand(
-            async () =>
-            {
-                IsBusy = true;
-                try
-                {
-                    LastProbeResult = await _unisoc.ProbeReadOnlyDownloadVersionAsync(SelectedComPort).ConfigureAwait(true);
-                    StatusBanner = LastProbeResult.DiagnosticMessage;
-                }
-                finally
-                {
-                    IsBusy = false;
-                }
-            },
-            () => !string.IsNullOrWhiteSpace(SelectedComPort));
+        ScanUnisocEndpointsCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(RefreshUnisocAsync, "Unisoc USB scan failed"));
+        ProbeDownloadBannerCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(ProbeUnisocWithWaitAsync, "Unisoc boot probe failed"));
     }
 
-    public override async Task OnNavigatedToAsync(CancellationToken ct = default) => await RefreshUnisocAsync().ConfigureAwait(true);
+    public override Task OnNavigatedToAsync(CancellationToken ct = default) =>
+        RunSafeActivityAsync(RefreshUnisocAsync, "Unisoc USB scan failed");
+
+    private async Task ProbeUnisocWithWaitAsync()
+    {
+        var portToProbe = SelectedComPort?.Trim();
+        var activePorts = await _usb.EnumerateComPortsAsync().ConfigureAwait(true);
+
+        if (string.IsNullOrWhiteSpace(portToProbe) ||
+            !activePorts.Any(p => string.Equals(p.PortName, portToProbe, StringComparison.OrdinalIgnoreCase)))
+        {
+            var captured = await _discovery.WaitForVendorUsbEndpointAsync(
+                "Unisoc Boot ROM Probe (BSL_REP_VER)",
+                u => u.DetectedChipsetVendor == ChipsetVendor.Unisoc &&
+                     !string.IsNullOrWhiteSpace(u.AssociatedComPort),
+                "Power off phone, hold Boot / Vol-, and connect USB cable",
+                TimeSpan.FromSeconds(45),
+                CreateWaitProgressCallback()).ConfigureAwait(true);
+
+            portToProbe = captured.AssociatedComPort!;
+            SelectedComPort = portToProbe;
+            await RefreshUnisocAsync().ConfigureAwait(true);
+        }
+
+        StatusBanner = $"Probing Unisoc HDLC 0x7E boot banner on {portToProbe}...";
+        LastProbeResult = await _unisoc.ProbeReadOnlyDownloadVersionAsync(portToProbe).ConfigureAwait(true);
+        StatusBanner = LastProbeResult.DiagnosticMessage;
+    }
 
     private async Task RefreshUnisocAsync()
     {
@@ -225,13 +259,14 @@ public sealed class SpdUnisocToolsViewModel : PageViewModelBase
         }
         StatusBanner = filtered.Count > 0
             ? $"Detected {filtered.Count} Unisoc/Spreadtrum USB endpoint(s) (VID 0x1782)."
-            : "No Unisoc Download (1782:4D00) or SCI Diagnostic endpoints currently connected.";
+            : "No Unisoc Download (1782:4D00) endpoint attached yet — click 'Probe Unisoc Boot ROM Banner' to enter 'Waiting for device...' mode.";
     }
 }
 
 // Page 9: DIAG and Diagnostics (Section 2E)
 public sealed class DiagDiagnosticsViewModel : PageViewModelBase
 {
+    private readonly IDeviceDiscoveryProvider _discovery;
     private readonly IUsbInterfaceProvider _usb;
     private readonly IDiagnosticProvider _diag;
 
@@ -263,30 +298,46 @@ public sealed class DiagDiagnosticsViewModel : PageViewModelBase
     public AsyncRelayCommand ScanDiagEndpointsCommand { get; }
     public AsyncRelayCommand RunReadOnlyVersionQueryCommand { get; }
 
-    public DiagDiagnosticsViewModel(IUsbInterfaceProvider usb, IDiagnosticProvider diag)
+    public DiagDiagnosticsViewModel(IDeviceDiscoveryProvider discovery, IUsbInterfaceProvider usb, IDiagnosticProvider diag)
     {
+        _discovery = discovery;
         _usb = usb;
         _diag = diag;
-        ScanDiagEndpointsCommand = new AsyncRelayCommand(RefreshDiagAsync);
+        ScanDiagEndpointsCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(RefreshDiagAsync, "DIAG scan failed"));
         RunReadOnlyVersionQueryCommand = new AsyncRelayCommand(
-            async () =>
-            {
-                if (SelectedEndpoint is null) return;
-                IsBusy = true;
-                try
-                {
-                    LastQueryResult = await _diag.QueryReadOnlyDiagnosticVersionAsync(SelectedEndpoint).ConfigureAwait(true);
-                    StatusBanner = LastQueryResult.Summary;
-                }
-                finally
-                {
-                    IsBusy = false;
-                }
-            },
-            () => SelectedEndpoint is { SupportsReadOnlyVersionProbe: true });
+            () => RunSafeActivityAsync(QueryDiagWithWaitAsync, "DIAG version query failed"),
+            () => SelectedEndpoint is null || SelectedEndpoint.SupportsReadOnlyVersionProbe);
     }
 
-    public override async Task OnNavigatedToAsync(CancellationToken ct = default) => await RefreshDiagAsync().ConfigureAwait(true);
+    public override Task OnNavigatedToAsync(CancellationToken ct = default) =>
+        RunSafeActivityAsync(RefreshDiagAsync, "DIAG scan failed");
+
+    private async Task QueryDiagWithWaitAsync()
+    {
+        if (SelectedEndpoint is null)
+        {
+            await _discovery.WaitForVendorUsbEndpointAsync(
+                "Read-Only DIAG Version Probe",
+                u => u.ClassifiedMode is ConnectionMode.QualcommDiag or ConnectionMode.UnisocDiag or ConnectionMode.VendorDiag or ConnectionMode.MediaTekMeta,
+                "Connect device with an active diagnostic USB serial interface",
+                TimeSpan.FromSeconds(45),
+                CreateWaitProgressCallback()).ConfigureAwait(true);
+            await RefreshDiagAsync().ConfigureAwait(true);
+        }
+
+        if (SelectedEndpoint is null)
+            return;
+
+        if (!SelectedEndpoint.SupportsReadOnlyVersionProbe)
+        {
+            StatusBanner = SelectedEndpoint.GuardrailNotice;
+            return;
+        }
+
+        StatusBanner = $"Executing read-only version query on {SelectedEndpoint.ProtocolFamily}...";
+        LastQueryResult = await _diag.QueryReadOnlyDiagnosticVersionAsync(SelectedEndpoint).ConfigureAwait(true);
+        StatusBanner = LastQueryResult.Summary;
+    }
 
     private async Task RefreshDiagAsync()
     {
@@ -298,7 +349,7 @@ public sealed class DiagDiagnosticsViewModel : PageViewModelBase
 
         StatusBanner = items.Count > 0
             ? $"Classified {items.Count} diagnostic endpoint(s). Protected NV/radio writes are strictly disabled."
-            : "No DIAG USB interface detected. Note: MediaTek and Unisoc Transsion devices do NOT expose Qualcomm QCDM.";
+            : "No DIAG USB interface detected. Click 'Execute Documented Read-Only DIAG Version Probe' to wait for a compatible DIAG device.";
     }
 }
 
@@ -352,70 +403,66 @@ public sealed class BootloaderManagerViewModel : PageViewModelBase
         _discovery = discovery;
         _bootloaderManager = bootloaderManager;
 
-        AssessBootloaderCommand = new AsyncRelayCommand(AssessAsync);
+        AssessBootloaderCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(AssessWithWaitAsync, "Bootloader assessment failed"));
         ExecuteOfficialUnlockCommand = new AsyncRelayCommand(
-            ExecuteUnlockAsync,
+            () => RunSafeActivityAsync(ExecuteUnlockWithWaitAsync, "Official unlock failed"),
             () => CurrentAssessment is { IsUnlockWorkflowPermitted: true } &&
                   string.Equals(ConfirmationInput?.Trim(), CurrentAssessment.ExpectedConfirmationPhrase, StringComparison.Ordinal));
 
-        _discovery.InventoryChanged += (_, _) => _ = AssessIfSelectedAsync();
+        _discovery.InventoryChanged += (_, _) => UiInteractionBridge.RunOnUiThread(() => _ = AssessIfSelectedQuietlyAsync());
     }
 
-    public override async Task OnNavigatedToAsync(CancellationToken ct = default) => await AssessIfSelectedAsync().ConfigureAwait(true);
+    public override Task OnNavigatedToAsync(CancellationToken ct = default) => AssessIfSelectedQuietlyAsync();
 
-    private async Task AssessIfSelectedAsync()
-    {
-        if (_discovery.SelectedDevice is not null)
-        {
-            await AssessAsync().ConfigureAwait(true);
-        }
-        else
-        {
-            CurrentAssessment = null;
-            StatusBanner = _discovery.RequiresExplicitSelection
-                ? "Select one device explicitly before assessing bootloader state."
-                : "Connect a supported device in ADB or Fastboot mode to evaluate bootloader state.";
-        }
-    }
-
-    private async Task AssessAsync()
+    private async Task AssessIfSelectedQuietlyAsync()
     {
         try
         {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
-            IsBusy = true;
-            CurrentAssessment = await _bootloaderManager.AssessDeviceAsync(dev).ConfigureAwait(true);
-            StatusBanner = CurrentAssessment.StatusSummary;
+            if (_discovery.SelectedDevice is { } dev)
+            {
+                CurrentAssessment = await _bootloaderManager.AssessDeviceAsync(dev).ConfigureAwait(true);
+                StatusBanner = CurrentAssessment.StatusSummary;
+            }
+            else
+            {
+                CurrentAssessment = null;
+                StatusBanner = _discovery.RequiresExplicitSelection
+                    ? "Select one device explicitly before assessing bootloader state."
+                    : "Click 'Re-Assess Bootloader' to wait for a device automatically, or connect in ADB / Fastboot mode.";
+            }
         }
         catch (Exception ex)
         {
             StatusBanner = ex.Message;
         }
-        finally
-        {
-            IsBusy = false;
-        }
     }
 
-    private async Task ExecuteUnlockAsync()
+    private async Task AssessWithWaitAsync()
     {
-        if (CurrentAssessment is null) return;
-        try
-        {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
-            IsBusy = true;
-            LastResult = await _bootloaderManager.ExecuteVerifiedUnlockAsync(dev, CurrentAssessment, ConfirmationInput).ConfigureAwait(true);
-            StatusBanner = LastResult.Summary;
-            ConfirmationInput = string.Empty;
-            CurrentAssessment = await _bootloaderManager.AssessDeviceAsync(dev).ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            StatusBanner = ex.Message;
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        var dev = await _discovery.WaitForDeviceAsync(
+            "Assess Bootloader State",
+            [ConnectionMode.AdbAuthorized, ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        StatusBanner = $"Assessing bootloader policy and lock state on {dev.DeviceKey}...";
+        CurrentAssessment = await _bootloaderManager.AssessDeviceAsync(dev).ConfigureAwait(true);
+        StatusBanner = CurrentAssessment.StatusSummary;
+    }
+
+    private async Task ExecuteUnlockWithWaitAsync()
+    {
+        if (CurrentAssessment is null)
+            return;
+
+        var dev = await _discovery.WaitForDeviceAsync(
+            "Official Bootloader Unlock",
+            [ConnectionMode.FastbootBootloader],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        StatusBanner = $"Executing official unlock on {dev.TransportSerial} — approve prompt on handset screen with Volume Up...";
+        LastResult = await _bootloaderManager.ExecuteVerifiedUnlockAsync(dev, CurrentAssessment, ConfirmationInput).ConfigureAwait(true);
+        StatusBanner = LastResult.Summary;
+        ConfirmationInput = string.Empty;
+        CurrentAssessment = await _bootloaderManager.AssessDeviceAsync(dev).ConfigureAwait(true);
     }
 }

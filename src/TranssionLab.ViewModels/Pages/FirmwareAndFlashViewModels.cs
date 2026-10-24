@@ -385,10 +385,17 @@ public sealed class RomStudioViewModel : PageViewModelBase
 
         ValidateSourceBuildEnvCommand = new RelayCommand(() =>
         {
-            BuildEnvReport = _romStudio.ValidateCustomRomSourceWorkspace(AospWorkspacePath);
-            StatusBanner = BuildEnvReport.ReadyForSourceBuild
-                ? "Workspace satisfies AOSP/LineageOS custom ROM source build prerequisites."
-                : $"Source build workspace incomplete ({BuildEnvReport.ValidationFindings.Count} requirement finding(s)).";
+            try
+            {
+                BuildEnvReport = _romStudio.ValidateCustomRomSourceWorkspace(AospWorkspacePath);
+                StatusBanner = BuildEnvReport.ReadyForSourceBuild
+                    ? "Workspace satisfies AOSP/LineageOS custom ROM source build prerequisites."
+                    : $"Source build workspace incomplete ({BuildEnvReport.ValidationFindings.Count} requirement finding(s)).";
+            }
+            catch (Exception ex)
+            {
+                StatusBanner = $"Workspace validation error: {ex.Message}";
+            }
         });
 
         StatusBanner = "Extracts partitions from OTA payload.bin / ZIP / TAR / PAC / Scatter and converts Sparse images; validates AOSP custom ROM prerequisites.";
@@ -581,42 +588,40 @@ public sealed class FlashManagerViewModel : PageViewModelBase, IDisposable
 
     private async Task BuildPlanAsync()
     {
-        try
+        await RunSafeActivityAsync(async () =>
         {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
-            IsBusy = true;
+            var dev = await _discovery.WaitForDeviceAsync(
+                "Build & Validate Flash Execution Plan",
+                [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+                onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
             DryRunReport = null;
+            StatusBanner = $"Validating {FlashQueue.Count} partition image(s) against {dev.TransportSerial} ({dev.ActiveConnectionMode})...";
             var tuples = FlashQueue.Select(q => (q.PartitionName, q.ImageFilePath)).ToList();
             ActivePlan = await _flashManager.BuildExecutionPlanAsync(dev, tuples).ConfigureAwait(true);
             StatusBanner = ActivePlan.BlockedBySafetyPolicy
                 ? $"Plan blocked by safety guardrails: {(ActivePlan.SafetyFindings.Count > 0 ? ActivePlan.SafetyFindings[0] : "Policy violation")}"
                 : $"Plan {ActivePlan.PlanId} ready ({ActivePlan.ProposedSteps.Count} steps). Run Dry-Run Validation next.";
-        }
-        catch (Exception ex)
-        {
-            StatusBanner = ex.Message;
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        }, "Flash plan build failed").ConfigureAwait(true);
     }
 
     private async Task RunDryRunAsync()
     {
         if (ActivePlan is null) return;
-        IsBusy = true;
-        try
+        await RunSafeActivityAsync(async () =>
         {
+            await _discovery.WaitForDeviceAsync(
+                "Dry-Run Pre-Flight Check",
+                [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+                TimeSpan.FromSeconds(20),
+                CreateWaitProgressCallback()).ConfigureAwait(true);
+
+            StatusBanner = $"Running 11-step Dry-Run validation for {ActivePlan.PlanId}...";
             DryRunReport = await _flashManager.RunDryRunValidationAsync(ActivePlan).ConfigureAwait(true);
             StatusBanner = DryRunReport.Passed
                 ? $"Dry-Run PASSED. Confirm risk and type '{ActivePlan.RequiredConfirmationText}' to enable Write."
                 : $"Dry-Run FAILED: {string.Join("; ", DryRunReport.BlockingErrors)}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        }, "Dry-Run validation failed").ConfigureAwait(true);
     }
 
     private async Task ExecuteVerifiedFlashAsync()
@@ -628,6 +633,14 @@ public sealed class FlashManagerViewModel : PageViewModelBase, IDisposable
 
         try
         {
+            await _discovery.WaitForDeviceAsync(
+                "Execute Validated Flash Plan",
+                [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+                TimeSpan.FromSeconds(25),
+                CreateWaitProgressCallback(),
+                _flashCts.Token).ConfigureAwait(true);
+            IsWaitingForDevice = false;
+
             var token = new FlashConfirmationToken(
                 ActivePlan.PlanId,
                 ActivePlan.PlanHashSha256,
@@ -636,10 +649,11 @@ public sealed class FlashManagerViewModel : PageViewModelBase, IDisposable
                 DateTimeOffset.UtcNow);
 
             var prog = new Progress<(int StepIndex, int TotalSteps, string Status)>(p =>
-            {
-                ProgressPercent = p.TotalSteps > 0 ? (p.StepIndex * 100) / p.TotalSteps : 0;
-                StatusBanner = $"[{p.StepIndex}/{p.TotalSteps}] {p.Status}";
-            });
+                UiInteractionBridge.RunOnUiThread(() =>
+                {
+                    ProgressPercent = p.TotalSteps > 0 ? (p.StepIndex * 100) / p.TotalSteps : 0;
+                    StatusBanner = $"[{p.StepIndex}/{p.TotalSteps}] {p.Status}";
+                }));
 
             LastOperationReport = await _flashManager.ExecutePlanAsync(
                 ActivePlan, DryRunReport, token, prog, _flashCts.Token).ConfigureAwait(true);
@@ -648,12 +662,18 @@ public sealed class FlashManagerViewModel : PageViewModelBase, IDisposable
             ConfirmationText = string.Empty;
             RiskAcknowledged = false;
         }
+        catch (OperationCanceledException)
+        {
+            StatusBanner = "Flash cancelled safely by user.";
+        }
         catch (Exception ex)
         {
             StatusBanner = $"Flash aborted: {ex.Message}";
+            UiInteractionBridge.OnCommandException?.Invoke(ex);
         }
         finally
         {
+            IsWaitingForDevice = false;
             _flashCts.Dispose();
             _flashCts = null;
             IsBusy = false;

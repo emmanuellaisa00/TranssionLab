@@ -10,14 +10,37 @@ public static class UiInteractionBridge
     public static Func<string, string, string, string?>? PickSaveFile { get; set; }
     public static Func<string, string?>? PickDirectory { get; set; }
     public static Action<string>? CopyTextToClipboard { get; set; }
+    public static Action<Action>? InvokeOnUiThread { get; set; }
+    public static Action<Exception>? OnCommandException { get; set; }
+
+    public static void RunOnUiThread(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        var invoker = InvokeOnUiThread;
+        if (invoker is not null)
+        {
+            invoker(action);
+        }
+        else
+        {
+            action();
+        }
+    }
 }
 
 public abstract class ObservableObject : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        var handler = PropertyChanged;
+        if (handler is null)
+            return;
+
+        UiInteractionBridge.RunOnUiThread(() =>
+            handler.Invoke(this, new PropertyChangedEventArgs(propertyName)));
+    }
 
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
@@ -44,14 +67,55 @@ public abstract class PageViewModelBase : ObservableObject
         protected set => SetProperty(ref _isBusy, value);
     }
 
+    private bool _isWaitingForDevice;
+    public bool IsWaitingForDevice
+    {
+        get => _isWaitingForDevice;
+        protected internal set => SetProperty(ref _isWaitingForDevice, value);
+    }
+
     private string _statusBanner = "Ready";
     public string StatusBanner
     {
         get => _statusBanner;
-        protected set => SetProperty(ref _statusBanner, value);
+        protected internal set => SetProperty(ref _statusBanner, value);
     }
 
     public virtual Task OnNavigatedToAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+    protected async Task RunSafeActivityAsync(Func<Task> action, string? errorPrefix = null)
+    {
+        IsBusy = true;
+        try
+        {
+            await action().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException ex)
+        {
+            StatusBanner = string.IsNullOrWhiteSpace(ex.Message)
+                ? "Cancelled — stopped waiting for device / operation aborted."
+                : ex.Message;
+        }
+        catch (Exception ex)
+        {
+            StatusBanner = string.IsNullOrWhiteSpace(errorPrefix)
+                ? ex.Message
+                : $"{errorPrefix}: {ex.Message}";
+            UiInteractionBridge.OnCommandException?.Invoke(ex);
+        }
+        finally
+        {
+            IsWaitingForDevice = false;
+            IsBusy = false;
+        }
+    }
+
+    protected Action<string> CreateWaitProgressCallback() =>
+        msg => UiInteractionBridge.RunOnUiThread(() =>
+        {
+            IsWaitingForDevice = true;
+            StatusBanner = msg;
+        });
 }
 
 public sealed class RelayCommand : ICommand
@@ -73,9 +137,41 @@ public sealed class RelayCommand : ICommand
         _canExecute = canExecute;
     }
 
-    public bool CanExecute(object? parameter) => _canExecute?.Invoke(parameter) ?? true;
-    public void Execute(object? parameter) => _execute(parameter);
-    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+    public bool CanExecute(object? parameter)
+    {
+        try
+        {
+            return _canExecute?.Invoke(parameter) ?? true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public void Execute(object? parameter)
+    {
+        if (!CanExecute(parameter))
+            return;
+
+        try
+        {
+            _execute(parameter);
+        }
+        catch (Exception ex)
+        {
+            UiInteractionBridge.OnCommandException?.Invoke(ex);
+        }
+    }
+
+    public void RaiseCanExecuteChanged()
+    {
+        var handler = CanExecuteChanged;
+        if (handler is null)
+            return;
+
+        UiInteractionBridge.RunOnUiThread(() => handler.Invoke(this, EventArgs.Empty));
+    }
 }
 
 public sealed class AsyncRelayCommand : ICommand
@@ -100,7 +196,17 @@ public sealed class AsyncRelayCommand : ICommand
 
     public bool IsExecuting => _isExecuting;
 
-    public bool CanExecute(object? parameter) => !_isExecuting && (_canExecute?.Invoke(parameter) ?? true);
+    public bool CanExecute(object? parameter)
+    {
+        try
+        {
+            return !_isExecuting && (_canExecute?.Invoke(parameter) ?? true);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public async void Execute(object? parameter) => await ExecuteAsync(parameter).ConfigureAwait(true);
 
@@ -115,6 +221,14 @@ public sealed class AsyncRelayCommand : ICommand
         {
             await _executeAsync(parameter).ConfigureAwait(true);
         }
+        catch (OperationCanceledException)
+        {
+            // Handled cleanly as user cancellation
+        }
+        catch (Exception ex)
+        {
+            UiInteractionBridge.OnCommandException?.Invoke(ex);
+        }
         finally
         {
             _isExecuting = false;
@@ -122,5 +236,12 @@ public sealed class AsyncRelayCommand : ICommand
         }
     }
 
-    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+    public void RaiseCanExecuteChanged()
+    {
+        var handler = CanExecuteChanged;
+        if (handler is null)
+            return;
+
+        UiInteractionBridge.RunOnUiThread(() => handler.Invoke(this, EventArgs.Empty));
+    }
 }

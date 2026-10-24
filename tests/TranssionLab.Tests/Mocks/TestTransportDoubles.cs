@@ -5,15 +5,35 @@ namespace TranssionLab.Tests.Mocks;
 
 public sealed class SimulatedPnpBackend : IWindowsPnpBackend
 {
+    private readonly object _gate = new();
     public List<RawPnpDeviceRecord> Devices { get; set; } = new();
     public List<string> ComPorts { get; set; } = new();
 
     public event EventHandler? DeviceTopologyChanged;
 
-    public Task<IReadOnlyList<RawPnpDeviceRecord>> QueryUsbAndPortEntitiesAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<RawPnpDeviceRecord>>(Devices.ToList());
+    public Task<IReadOnlyList<RawPnpDeviceRecord>> QueryUsbAndPortEntitiesAsync(CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            return Task.FromResult<IReadOnlyList<RawPnpDeviceRecord>>(Devices.ToList());
+        }
+    }
 
-    public IReadOnlyList<string> GetSystemComPortNames() => ComPorts.ToList();
+    public IReadOnlyList<string> GetSystemComPortNames()
+    {
+        lock (_gate)
+        {
+            return ComPorts.ToList();
+        }
+    }
+
+    public void Mutate(Action<SimulatedPnpBackend> mutator)
+    {
+        lock (_gate)
+        {
+            mutator(this);
+        }
+    }
 
     public void TriggerTopologyChange() => DeviceTopologyChanged?.Invoke(this, EventArgs.Empty);
     public void StartWatching() { }
@@ -22,6 +42,7 @@ public sealed class SimulatedPnpBackend : IWindowsPnpBackend
 
 public sealed class RecordedProcessRunner : IProcessRunner
 {
+    private readonly object _gate = new();
     private readonly Func<string, IReadOnlyList<string>, CommandExecutionResult> _handler;
     public List<(string Exe, IReadOnlyList<string> Args)> Invocations { get; } = new();
 
@@ -36,7 +57,10 @@ public sealed class RecordedProcessRunner : IProcessRunner
         TimeSpan timeout,
         CancellationToken ct = default)
     {
-        Invocations.Add((executablePath, arguments.ToList()));
+        lock (_gate)
+        {
+            Invocations.Add((executablePath, arguments.ToList()));
+        }
         return Task.FromResult(_handler(executablePath, arguments));
     }
 }

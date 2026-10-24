@@ -290,6 +290,107 @@ public sealed class PartitionManager : IPartitionManager
             DateTimeOffset.UtcNow);
     }
 
+    public async Task<DevicePartitionTableSnapshot> LoadOfflinePartitionTableAsync(
+        string firmwareOrContainerPath,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(firmwareOrContainerPath);
+        if (!File.Exists(firmwareOrContainerPath))
+        {
+            throw new FileNotFoundException("Firmware container or profile file was not found.", firmwareOrContainerPath);
+        }
+
+        var inspect = await _firmwareRegistry.InspectAsync(firmwareOrContainerPath, ct).ConfigureAwait(false);
+        var entries = new List<DevicePartitionEntry>();
+
+        if (inspect.SuperInfo is not null && inspect.SuperInfo.LogicalPartitions.Count > 0)
+        {
+            foreach (var lp in inspect.SuperInfo.LogicalPartitions)
+            {
+                var baseName = HashAndBinaryHelpers.StripSlotSuffix(lp.PartitionName);
+                var slotSuffix = lp.PartitionName.EndsWith("_a", StringComparison.OrdinalIgnoreCase) ? "a"
+                               : lp.PartitionName.EndsWith("_b", StringComparison.OrdinalIgnoreCase) ? "b"
+                               : string.Empty;
+                var (policy, notice) = ClassifyPartitionPolicy(lp.PartitionName, isLogical: true, profile: null);
+                entries.Add(new DevicePartitionEntry(
+                    PartitionName: lp.PartitionName,
+                    BaseName: baseName,
+                    SlotSuffix: slotSuffix,
+                    SizeBytes: lp.SizeBytes,
+                    FormattedSize: HashAndBinaryHelpers.FormatBytesHuman(lp.SizeBytes),
+                    PartitionType: $"lp:{lp.GroupName}",
+                    IsLogicalInSuper: true,
+                    HasSlot: !string.IsNullOrEmpty(slotSuffix),
+                    DeviceBlockNode: inspect.FileName,
+                    AccessPolicy: policy,
+                    CanFlashInCurrentMode: false,
+                    CanEraseInCurrentMode: false,
+                    CanReadbackInCurrentMode: false,
+                    CanResizeOrDeleteLogical: false,
+                    Provenance: DataProvenance.Detected,
+                    SafetyNotice: $"{notice} (Offline super.img LpMetadata layout)"));
+            }
+        }
+        else
+        {
+            foreach (var p in inspect.Partitions)
+            {
+                var baseName = HashAndBinaryHelpers.StripSlotSuffix(p.PartitionName);
+                var slotSuffix = p.PartitionName.EndsWith("_a", StringComparison.OrdinalIgnoreCase) ? "a"
+                               : p.PartitionName.EndsWith("_b", StringComparison.OrdinalIgnoreCase) ? "b"
+                               : string.Empty;
+                bool isLogical = IsKnownLogicalPartition(p.PartitionName, profile: null);
+                var (policy, notice) = ClassifyPartitionPolicy(p.PartitionName, isLogical, profile: null);
+                long? resolvedSize = p.DeclaredPartitionCapacityBytes is > 0
+                    ? p.DeclaredPartitionCapacityBytes
+                    : p.EffectiveUnsparsedBytes > 0 ? p.EffectiveUnsparsedBytes : null;
+
+                entries.Add(new DevicePartitionEntry(
+                    PartitionName: p.PartitionName,
+                    BaseName: baseName,
+                    SlotSuffix: slotSuffix,
+                    SizeBytes: resolvedSize,
+                    FormattedSize: resolvedSize.HasValue ? HashAndBinaryHelpers.FormatBytesHuman(resolvedSize) : "Unknown",
+                    PartitionType: inspect.PackageFormat.ToString(),
+                    IsLogicalInSuper: isLogical,
+                    HasSlot: !string.IsNullOrEmpty(slotSuffix),
+                    DeviceBlockNode: p.FileName,
+                    AccessPolicy: policy,
+                    CanFlashInCurrentMode: false,
+                    CanEraseInCurrentMode: false,
+                    CanReadbackInCurrentMode: false,
+                    CanResizeOrDeleteLogical: false,
+                    Provenance: DataProvenance.Detected,
+                    SafetyNotice: $"{notice} (Offline {inspect.PackageFormat} layout)"));
+            }
+        }
+
+        bool usesDynamic = entries.Any(e => e.IsLogicalInSuper || string.Equals(e.BaseName, "super", StringComparison.OrdinalIgnoreCase));
+        var label = HashAndBinaryHelpers.SanitizeFileNameComponent(Path.GetFileNameWithoutExtension(inspect.FileName), "offline");
+
+        _logger.LogInfo(
+            "PartitionManager",
+            $"Loaded offline partition layout ({entries.Count} partitions) from '{inspect.FileName}'",
+            $"Format={inspect.PackageFormat}",
+            $"OFFLINE:{label}",
+            "partition.inspect_table");
+
+        return new DevicePartitionTableSnapshot(
+            $"OFFLINE:{inspect.FileName}",
+            label,
+            ConnectionMode.Unknown,
+            null,
+            usesDynamic ? "super" : null,
+            usesDynamic,
+            entries.Count,
+            entries.Count(e => e.IsLogicalInSuper),
+            entries.Count(e => e.AccessPolicy is PartitionAccessPolicy.ProtectedNvramOrCalibrationBlocked
+                                              or PartitionAccessPolicy.BootChainCriticalBlocked
+                                              or PartitionAccessPolicy.AntiTheftFrpBlocked),
+            entries,
+            DateTimeOffset.UtcNow);
+    }
+
     public async Task<string> ExportPartitionTableJsonAsync(
         DevicePartitionTableSnapshot snapshot,
         string outputFilePath,
@@ -299,7 +400,7 @@ public sealed class PartitionManager : IPartitionManager
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFilePath);
 
         var fullPath = Path.GetFullPath(outputFilePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        HashAndBinaryHelpers.EnsureParentDirectoryExists(fullPath);
         var json = JsonSerializer.Serialize(snapshot, JsonOpts);
         await File.WriteAllTextAsync(fullPath, json, Encoding.UTF8, ct).ConfigureAwait(false);
         _logger.LogInfo("PartitionManager", $"Exported partition table ({snapshot.TotalPartitions} partitions) -> '{fullPath}'", null, snapshot.DeviceKey, "partition.inspect_table");
@@ -512,7 +613,9 @@ public sealed class PartitionManager : IPartitionManager
             : $"/dev/block/by-name/{partition.PartitionName}";
 
         Directory.CreateDirectory(outputDirectory);
-        var fileName = $"{partition.PartitionName}_{device.TransportSerial}_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}.img";
+        var safePart = HashAndBinaryHelpers.SanitizeFileNameComponent(partition.PartitionName, "partition");
+        var safeSerial = HashAndBinaryHelpers.SanitizeFileNameComponent(device.TransportSerial, "device");
+        var fileName = $"{safePart}_{safeSerial}_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}.img";
         var destPath = Path.GetFullPath(Path.Combine(outputDirectory, fileName));
 
         var sw = Stopwatch.StartNew();

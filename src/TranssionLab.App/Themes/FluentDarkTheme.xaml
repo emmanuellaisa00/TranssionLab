@@ -124,6 +124,20 @@
     <Setter Property="Margin" Value="0,4" />
   </Style>
 
+  <!-- Readable ComboBox & Dropdown Items -->
+  <Style TargetType="ComboBox">
+    <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="Padding" Value="8,5" />
+    <Setter Property="Foreground" Value="#0F172A" />
+  </Style>
+
+  <Style TargetType="ComboBoxItem">
+    <Setter Property="Foreground" Value="#0F172A" />
+    <Setter Property="Background" Value="#F8FAFC" />
+    <Setter Property="Padding" Value="8,5" />
+  </Style>
+
   <!-- Dark DataGrid -->
   <Style TargetType="DataGrid">
     <Setter Property="Background" Value="#0F172A" />

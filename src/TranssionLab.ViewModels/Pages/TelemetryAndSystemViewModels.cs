@@ -140,17 +140,17 @@ public sealed class LiveLogsViewModel : PageViewModelBase
             StatusBanner = $"Cleared live display view. Archived session logs ({_logger.GetArchivedSessionEntries().Count} entries) remain intact.";
         });
 
-        ExportTxtCommand = new AsyncRelayCommand(async () =>
+        ExportTxtCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(async () =>
         {
             await _logger.ExportTxtAsync(ExportPathTxt).ConfigureAwait(true);
             StatusBanner = $"Exported TXT log archive to '{ExportPathTxt}'.";
-        });
+        }, "TXT log export failed"));
 
-        ExportJsonCommand = new AsyncRelayCommand(async () =>
+        ExportJsonCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(async () =>
         {
             await _logger.ExportJsonAsync(ExportPathJson).ConfigureAwait(true);
             StatusBanner = $"Exported JSON log archive to '{ExportPathJson}'.";
-        });
+        }, "JSON log export failed"));
 
         GenerateTroubleshootingBundleCommand = new RelayCommand(() =>
         {
@@ -171,11 +171,22 @@ public sealed class LiveLogsViewModel : PageViewModelBase
             StatusBanner = "Copied redacted troubleshooting bundle to Windows Clipboard.";
         });
 
+        _logger.EntryRecorded += (_, _) => UiInteractionBridge.RunOnUiThread(() =>
+        {
+            if (_displaySubscribed)
+            {
+                ApplyFilter();
+            }
+        });
+
         ApplyFilter();
     }
 
+    private bool _displaySubscribed;
+
     public override Task OnNavigatedToAsync(CancellationToken ct = default)
     {
+        _displaySubscribed = true;
         ApplyFilter();
         return Task.CompletedTask;
     }
@@ -235,21 +246,21 @@ public sealed class SettingsViewModel : PageViewModelBase
         _redactLogs = cur.RedactSensitiveDataInLogs;
         _strictProfileBeforeFlash = cur.RequireStrictProfileMatchBeforeFlash;
 
-        SaveSettingsCommand = new AsyncRelayCommand(async () =>
+        SaveSettingsCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(async () =>
         {
             var updated = new AppSettingsModel
             {
-                AdbExecutablePath = AdbPath.Trim(),
-                FastbootExecutablePath = FastbootPath.Trim(),
+                AdbExecutablePath = string.IsNullOrWhiteSpace(AdbPath) ? "adb" : AdbPath.Trim(),
+                FastbootExecutablePath = string.IsNullOrWhiteSpace(FastbootPath) ? "fastboot" : FastbootPath.Trim(),
                 OptionalMetaLibraryPath = string.IsNullOrWhiteSpace(OptionalMetaDllPath) ? null : OptionalMetaDllPath.Trim(),
-                WorkspaceDataDirectory = WorkspaceDirectory.Trim(),
+                WorkspaceDataDirectory = string.IsNullOrWhiteSpace(WorkspaceDirectory) ? _settingsService.Current.WorkspaceDataDirectory : WorkspaceDirectory.Trim(),
                 AutoPollUsbChanges = AutoPollUsb,
                 RedactSensitiveDataInLogs = RedactLogs,
                 RequireStrictProfileMatchBeforeFlash = StrictProfileBeforeFlash
             };
             await _settingsService.SaveAsync(updated).ConfigureAwait(true);
             StatusBanner = "Settings saved locally. Offline-first mode active (no cloud accounts or telemetry).";
-        });
+        }, "Failed to save settings"));
     }
 }
 
@@ -278,7 +289,7 @@ public sealed class DocumentationAboutViewModel : PageViewModelBase
             "1. Architecture & Honest Capability Policy",
             "Overview",
             """
-            TRANSSIONLAB UNIVERSAL ANDROID SERVICING SUITE (v1.1.0)
+            TRANSSIONLAB UNIVERSAL ANDROID SERVICING SUITE (v1.2.0)
             Target OS: Windows 10 & Windows 11 (x64, ARM64-ready) | Offline-First
 
             Core Engineering Principles:

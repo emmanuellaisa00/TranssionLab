@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using TranssionLab.Core.Enums;
 using TranssionLab.Core.Interfaces;
 using TranssionLab.Core.Models;
+using TranssionLab.Firmware;
 using TranssionLab.ViewModels.Mvvm;
 
 namespace TranssionLab.ViewModels.Pages;
@@ -35,7 +36,7 @@ public sealed class DashboardViewModel : PageViewModelBase
 
     public string EmptyStateMessage => _discovery.RequiresExplicitSelection
         ? $"Multiple devices ({_discovery.ConnectedDevices.Count}) are connected. Select a target device explicitly in the top bar or Connection Manager."
-        : "No Android / Transsion device is currently connected. Attach a phone via USB (ADB, Fastboot, Recovery, MediaTek Preloader/BROM/META, or Unisoc Download) and click Scan Devices.";
+        : "No Android / Transsion device is currently connected. Attach a phone via USB (ADB, Fastboot, Recovery, MediaTek Preloader/BROM/META, or Unisoc Download), or launch any device activity to enter 'Waiting for device...' mode automatically.";
 
     public ObservableCollection<OperationCapabilityEvaluation> AvailableOperations { get; } = new();
     public ObservableCollection<ProtocolCapabilitySummary> ProviderSummaries { get; } = new();
@@ -46,22 +47,14 @@ public sealed class DashboardViewModel : PageViewModelBase
     {
         _discovery = discovery;
         _capabilities = capabilities;
-        _discovery.InventoryChanged += (_, _) => SyncFromDiscovery();
-        RefreshDashboardCommand = new AsyncRelayCommand(async () =>
+        _discovery.InventoryChanged += (_, _) => UiInteractionBridge.RunOnUiThread(SyncFromDiscovery);
+        RefreshDashboardCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(async () =>
         {
-            IsBusy = true;
             StatusBanner = "Scanning USB, ADB, and Fastboot transports...";
-            try
-            {
-                await _discovery.RefreshInventoryAsync().ConfigureAwait(true);
-                SyncFromDiscovery();
-                StatusBanner = $"Scan complete ({_discovery.ConnectedDevices.Count} endpoint(s) detected).";
-            }
-            finally
-            {
-                IsBusy = false;
-            }
-        });
+            await _discovery.RefreshInventoryAsync().ConfigureAwait(true);
+            SyncFromDiscovery();
+            StatusBanner = $"Scan complete ({_discovery.ConnectedDevices.Count} endpoint(s) detected).";
+        }, "Dashboard scan failed"));
         SyncFromDiscovery();
     }
 
@@ -131,7 +124,7 @@ public sealed class ConnectionManagerViewModel : PageViewModelBase
         _discovery = discovery;
         _usbProvider = usbProvider;
 
-        ScanAllTransportsCommand = new AsyncRelayCommand(RefreshAllAsync);
+        ScanAllTransportsCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(RefreshAllCoreAsync, "Transport scan failed"));
         ConfirmExplicitSelectionCommand = new RelayCommand(
             () =>
             {
@@ -151,36 +144,30 @@ public sealed class ConnectionManagerViewModel : PageViewModelBase
             StatusBanner = "Cleared explicit device selection.";
         });
 
-        _discovery.InventoryChanged += (_, _) => SyncSnapshots();
+        _discovery.InventoryChanged += (_, _) => UiInteractionBridge.RunOnUiThread(SyncSnapshots);
     }
 
-    public override async Task OnNavigatedToAsync(CancellationToken ct = default) => await RefreshAllAsync().ConfigureAwait(true);
+    public override Task OnNavigatedToAsync(CancellationToken ct = default) =>
+        RunSafeActivityAsync(RefreshAllCoreAsync, "Transport scan failed");
 
-    private async Task RefreshAllAsync()
+    private async Task RefreshAllCoreAsync()
     {
-        IsBusy = true;
-        try
-        {
-            await _discovery.RefreshInventoryAsync().ConfigureAwait(true);
-            var usb = await _usbProvider.EnumerateUsbDevicesAsync().ConfigureAwait(true);
-            var ports = await _usbProvider.EnumerateComPortsAsync().ConfigureAwait(true);
+        StatusBanner = "Scanning USB PnP topology, COM ports, ADB, and Fastboot...";
+        await _discovery.RefreshInventoryAsync().ConfigureAwait(true);
+        var usb = await _usbProvider.EnumerateUsbDevicesAsync().ConfigureAwait(true);
+        var ports = await _usbProvider.EnumerateComPortsAsync().ConfigureAwait(true);
 
-            UsbInterfaces.Clear();
-            foreach (var u in usb) UsbInterfaces.Add(u);
+        UsbInterfaces.Clear();
+        foreach (var u in usb) UsbInterfaces.Add(u);
 
-            ComPorts.Clear();
-            foreach (var p in ports) ComPorts.Add(p);
+        ComPorts.Clear();
+        foreach (var p in ports) ComPorts.Add(p);
 
-            ConnectionHistory.Clear();
-            foreach (var h in _usbProvider.GetConnectionHistory().Reverse()) ConnectionHistory.Add(h);
+        ConnectionHistory.Clear();
+        foreach (var h in _usbProvider.GetConnectionHistory().Reverse()) ConnectionHistory.Add(h);
 
-            SyncSnapshots();
-            StatusBanner = $"Enumerated {DiscoveredDevices.Count} logical device(s), {UsbInterfaces.Count} USB endpoint(s), {ComPorts.Count} COM port(s).";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        SyncSnapshots();
+        StatusBanner = $"Enumerated {DiscoveredDevices.Count} logical device(s), {UsbInterfaces.Count} USB endpoint(s), {ComPorts.Count} COM port(s).";
     }
 
     private void SyncSnapshots()
@@ -234,21 +221,26 @@ public sealed class DeviceExplorerViewModel : PageViewModelBase
     {
         _discovery = discovery;
         _exportPath = Path.Combine(settings.Current.WorkspaceDataDirectory, "device_snapshot.json");
-        _discovery.InventoryChanged += (_, _) =>
+        _discovery.InventoryChanged += (_, _) => UiInteractionBridge.RunOnUiThread(() =>
         {
             OnPropertyChanged(nameof(CurrentDevice));
             RebuildFilteredProperties();
-        };
+        });
 
         RefreshPropertiesViewCommand = new RelayCommand(RebuildFilteredProperties);
-        ExportDeviceSnapshotJsonCommand = new AsyncRelayCommand(async () =>
+        ExportDeviceSnapshotJsonCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(async () =>
         {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
+            var dev = await _discovery.WaitForDeviceAsync(
+                "Export Device Snapshot",
+                acceptedModes: null,
+                onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+            var fullPath = Path.GetFullPath(ExportPath);
+            HashAndBinaryHelpers.EnsureParentDirectoryExists(fullPath);
             var json = System.Text.Json.JsonSerializer.Serialize(dev, PrettyJsonOpts);
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(ExportPath))!);
-            await File.WriteAllTextAsync(ExportPath, json).ConfigureAwait(true);
-            StatusBanner = $"Exported verified device snapshot to {ExportPath}";
-        });
+            await File.WriteAllTextAsync(fullPath, json).ConfigureAwait(true);
+            StatusBanner = $"Exported verified device snapshot to '{fullPath}'.";
+        }, "Snapshot export failed"));
     }
 
     public override Task OnNavigatedToAsync(CancellationToken ct = default)
@@ -265,7 +257,7 @@ public sealed class DeviceExplorerViewModel : PageViewModelBase
         {
             StatusBanner = _discovery.RequiresExplicitSelection
                 ? "Select one device explicitly to inspect properties."
-                : "No active device selected.";
+                : "No active device selected. Click 'Export Snapshot JSON' to wait for a device automatically, or connect USB.";
             return;
         }
 
@@ -356,21 +348,23 @@ public sealed class AdbManagerViewModel : PageViewModelBase
                 OtaSideloadPath = picked;
         });
 
-        CheckAdbToolCommand = new AsyncRelayCommand(CheckToolAsync);
-        ReadBatteryAndStorageCommand = new AsyncRelayCommand(CaptureHealthAsync, () => IsAdbAuthorizedActive);
-        RebootSystemCommand = new AsyncRelayCommand(() => RebootToAsync("system"), () => CanRebootFromAdb);
-        RebootBootloaderCommand = new AsyncRelayCommand(() => RebootToAsync("bootloader"), () => CanRebootFromAdb);
-        RebootFastbootdCommand = new AsyncRelayCommand(() => RebootToAsync("fastboot"), () => CanRebootFromAdb);
-        RebootRecoveryCommand = new AsyncRelayCommand(() => RebootToAsync("recovery"), () => CanRebootFromAdb);
-        RunSideloadCommand = new AsyncRelayCommand(ExecuteSideloadAsync, () => IsSideloadActive && !string.IsNullOrWhiteSpace(OtaSideloadPath));
+        CheckAdbToolCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(CheckToolAsync, "ADB binary check failed"));
+        ReadBatteryAndStorageCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(CaptureHealthAsync, "ADB telemetry failed"));
+        RebootSystemCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => RebootToAsync("system"), "ADB reboot failed"));
+        RebootBootloaderCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => RebootToAsync("bootloader"), "ADB reboot failed"));
+        RebootFastbootdCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => RebootToAsync("fastboot"), "ADB reboot failed"));
+        RebootRecoveryCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => RebootToAsync("recovery"), "ADB reboot failed"));
+        RunSideloadCommand = new AsyncRelayCommand(
+            () => RunSafeActivityAsync(ExecuteSideloadAsync, "Sideload failed"),
+            () => !string.IsNullOrWhiteSpace(OtaSideloadPath));
 
-        _discovery.InventoryChanged += (_, _) => RaiseModeStates();
+        _discovery.InventoryChanged += (_, _) => UiInteractionBridge.RunOnUiThread(RaiseModeStates);
     }
 
-    public override async Task OnNavigatedToAsync(CancellationToken ct = default)
+    public override Task OnNavigatedToAsync(CancellationToken ct = default)
     {
         RaiseModeStates();
-        await CheckToolAsync().ConfigureAwait(true);
+        return RunSafeActivityAsync(CheckToolAsync, "ADB binary check failed");
     }
 
     private void RaiseModeStates()
@@ -378,75 +372,94 @@ public sealed class AdbManagerViewModel : PageViewModelBase
         OnPropertyChanged(nameof(IsAdbAuthorizedActive));
         OnPropertyChanged(nameof(IsSideloadActive));
         OnPropertyChanged(nameof(CanRebootFromAdb));
-        ReadBatteryAndStorageCommand.RaiseCanExecuteChanged();
-        RebootSystemCommand.RaiseCanExecuteChanged();
-        RebootBootloaderCommand.RaiseCanExecuteChanged();
-        RebootFastbootdCommand.RaiseCanExecuteChanged();
-        RebootRecoveryCommand.RaiseCanExecuteChanged();
         RunSideloadCommand.RaiseCanExecuteChanged();
     }
 
     private async Task CheckToolAsync()
     {
         var ver = await _adb.GetToolVersionAsync().ConfigureAwait(true);
-        ToolStatus = ver ?? "adb binary not found on PATH — configure path in Settings.";
+        ToolStatus = ver ?? "adb binary not found on PATH — place adb.exe in tools/ or configure path in Settings (#18).";
     }
 
     private async Task CaptureHealthAsync()
     {
-        var dev = _discovery.RequireExplicitlySelectedDevice();
-        if (string.IsNullOrWhiteSpace(dev.TransportSerial)) return;
-        IsBusy = true;
-        try
-        {
-            var bat = await _adb.CaptureBatterySummaryAsync(dev.TransportSerial).ConfigureAwait(true);
-            var df = await _adb.CaptureStorageSummaryAsync(dev.TransportSerial).ConfigureAwait(true);
-            DiagnosticOutput = $"=== BATTERY ===\n{bat}\n\n=== FILESYSTEMS ===\n{df}";
-            StatusBanner = $"Captured read-only health telemetry from {dev.TransportSerial}.";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        var dev = await _discovery.WaitForDeviceAsync(
+            "Capture Battery & Storage Telemetry",
+            [ConnectionMode.AdbAuthorized],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        if (string.IsNullOrWhiteSpace(dev.TransportSerial))
+            return;
+
+        StatusBanner = $"Reading battery & filesystem telemetry from {dev.TransportSerial}...";
+        var bat = await _adb.CaptureBatterySummaryAsync(dev.TransportSerial).ConfigureAwait(true);
+        var df = await _adb.CaptureStorageSummaryAsync(dev.TransportSerial).ConfigureAwait(true);
+        DiagnosticOutput = $"=== BATTERY ===\n{bat}\n\n=== FILESYSTEMS ===\n{df}";
+        StatusBanner = $"Captured read-only health telemetry from {dev.TransportSerial}.";
     }
 
     private async Task RebootToAsync(string mode)
     {
-        var dev = _discovery.RequireExplicitlySelectedDevice();
-        if (string.IsNullOrWhiteSpace(dev.TransportSerial)) return;
-        IsBusy = true;
-        try
+        var dev = await _discovery.WaitForDeviceAsync(
+            $"ADB Reboot ({mode})",
+            [ConnectionMode.AdbAuthorized, ConnectionMode.Recovery],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        if (string.IsNullOrWhiteSpace(dev.TransportSerial))
+            return;
+
+        StatusBanner = $"Sending 'adb reboot {mode}' to {dev.TransportSerial}...";
+        var res = await _adb.RebootAsync(dev.TransportSerial, mode).ConfigureAwait(true);
+        if (!res.Succeeded)
         {
-            var res = await _adb.RebootAsync(dev.TransportSerial, mode).ConfigureAwait(true);
-            StatusBanner = res.Succeeded
-                ? $"Reboot to '{mode}' sent to {dev.TransportSerial}. Rescanning USB on re-enumeration."
-                : $"Reboot failed: {res.StandardError}";
+            StatusBanner = $"Reboot failed: {res.StandardError}";
+            return;
         }
-        finally
+
+        ConnectionMode[]? postModes = mode switch
         {
-            IsBusy = false;
+            "bootloader" => [ConnectionMode.FastbootBootloader],
+            "fastboot" => [ConnectionMode.FastbootdUserspace],
+            "recovery" => [ConnectionMode.Recovery, ConnectionMode.AdbSideload],
+            _ => null
+        };
+
+        if (postModes is not null)
+        {
+            try
+            {
+                var reenum = await _discovery.WaitForDeviceAsync(
+                    $"Re-enumeration in {mode}",
+                    postModes,
+                    TimeSpan.FromSeconds(25),
+                    CreateWaitProgressCallback()).ConfigureAwait(true);
+                StatusBanner = $"Device re-enumerated in {reenum.ActiveConnectionMode} ({reenum.TransportSerial}).";
+            }
+            catch (Exception)
+            {
+                StatusBanner = $"Reboot to '{mode}' dispatched to {dev.TransportSerial}. Waiting timed out — verify USB driver if phone is on bootloader/recovery screen.";
+            }
+        }
+        else
+        {
+            StatusBanner = $"Reboot to '{mode}' sent to {dev.TransportSerial}.";
         }
     }
 
     private async Task ExecuteSideloadAsync()
     {
-        var dev = _discovery.RequireExplicitlySelectedDevice();
-        if (string.IsNullOrWhiteSpace(dev.TransportSerial)) return;
-        IsBusy = true;
-        try
-        {
-            var res = await _recovery.VerifyAndSideloadOtaAsync(dev.TransportSerial, OtaSideloadPath).ConfigureAwait(true);
-            DiagnosticOutput = $"{res.StandardOutput}\n{res.StandardError}".Trim();
-            StatusBanner = res.Succeeded ? "OTA Sideload completed." : $"Sideload failed (Exit {res.ExitCode}).";
-        }
-        catch (Exception ex)
-        {
-            StatusBanner = ex.Message;
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        var dev = await _discovery.WaitForDeviceAsync(
+            "Stream Recovery OTA Sideload",
+            [ConnectionMode.AdbSideload],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        if (string.IsNullOrWhiteSpace(dev.TransportSerial))
+            return;
+
+        StatusBanner = $"Streaming verified OTA package '{Path.GetFileName(OtaSideloadPath)}' to {dev.TransportSerial}...";
+        var res = await _recovery.VerifyAndSideloadOtaAsync(dev.TransportSerial, OtaSideloadPath).ConfigureAwait(true);
+        DiagnosticOutput = $"{res.StandardOutput}\n{res.StandardError}".Trim();
+        StatusBanner = res.Succeeded ? "OTA Sideload completed." : $"Sideload failed (Exit {res.ExitCode}).";
     }
 }
 
@@ -472,7 +485,7 @@ public sealed class FastbootManagerViewModel : PageViewModelBase
     {
         ConnectionMode.FastbootdUserspace => "Userspace Fastbootd (Logical 'super' partitions accessible)",
         ConnectionMode.FastbootBootloader => "Primary Bootloader Fastboot (Physical partitions & unlock commands)",
-        _ => "Not currently in Fastboot / Fastbootd mode"
+        _ => "Not currently in Fastboot / Fastbootd — Click any Fastboot action to wait for device automatically"
     };
 
     public AsyncRelayCommand QueryVariablesCommand { get; }
@@ -487,21 +500,24 @@ public sealed class FastbootManagerViewModel : PageViewModelBase
         _discovery = discovery;
         _fastboot = fastboot;
 
-        QueryVariablesCommand = new AsyncRelayCommand(QueryVarsAsync, () => IsFastbootActive);
-        SetSlotACommand = new AsyncRelayCommand(() => SwitchSlotAsync("a"), () => CanModifySlot);
-        SetSlotBCommand = new AsyncRelayCommand(() => SwitchSlotAsync("b"), () => CanModifySlot);
-        RebootSystemCommand = new AsyncRelayCommand(() => RebootAsync("system"), () => IsFastbootActive);
-        RebootBootloaderCommand = new AsyncRelayCommand(() => RebootAsync("bootloader"), () => IsFastbootActive);
-        RebootFastbootdCommand = new AsyncRelayCommand(() => RebootAsync("fastbootd"), () => IsFastbootActive);
+        QueryVariablesCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(QueryVarsAsync, "Fastboot variable query failed"));
+        SetSlotACommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => SwitchSlotAsync("a"), "Set slot A failed"));
+        SetSlotBCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => SwitchSlotAsync("b"), "Set slot B failed"));
+        RebootSystemCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => RebootAsync("system"), "Fastboot reboot failed"));
+        RebootBootloaderCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => RebootAsync("bootloader"), "Fastboot reboot failed"));
+        RebootFastbootdCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(() => RebootAsync("fastbootd"), "Fastbootd transition failed"));
 
-        _discovery.InventoryChanged += (_, _) => RefreshStateBindings();
+        _discovery.InventoryChanged += (_, _) => UiInteractionBridge.RunOnUiThread(RefreshStateBindings);
     }
 
-    public override async Task OnNavigatedToAsync(CancellationToken ct = default)
+    public override Task OnNavigatedToAsync(CancellationToken ct = default)
     {
         RefreshStateBindings();
-        var ver = await _fastboot.GetToolVersionAsync(ct).ConfigureAwait(true);
-        ToolStatus = ver ?? "fastboot binary not found on PATH — configure path in Settings.";
+        return RunSafeActivityAsync(async () =>
+        {
+            var ver = await _fastboot.GetToolVersionAsync(ct).ConfigureAwait(true);
+            ToolStatus = ver ?? "fastboot binary not found on PATH — place fastboot.exe in tools/ or configure path in Settings (#18).";
+        });
     }
 
     private void RefreshStateBindings()
@@ -509,59 +525,96 @@ public sealed class FastbootManagerViewModel : PageViewModelBase
         OnPropertyChanged(nameof(IsFastbootActive));
         OnPropertyChanged(nameof(CanModifySlot));
         OnPropertyChanged(nameof(ActiveSubModeLabel));
-        QueryVariablesCommand.RaiseCanExecuteChanged();
-        SetSlotACommand.RaiseCanExecuteChanged();
-        SetSlotBCommand.RaiseCanExecuteChanged();
-        RebootSystemCommand.RaiseCanExecuteChanged();
-        RebootBootloaderCommand.RaiseCanExecuteChanged();
-        RebootFastbootdCommand.RaiseCanExecuteChanged();
     }
 
     private async Task QueryVarsAsync()
     {
-        var dev = _discovery.RequireExplicitlySelectedDevice();
-        if (string.IsNullOrWhiteSpace(dev.TransportSerial)) return;
-        IsBusy = true;
-        try
+        var dev = await _discovery.WaitForDeviceAsync(
+            "Query Bootloader Variables (getvar)",
+            [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        if (string.IsNullOrWhiteSpace(dev.TransportSerial))
+            return;
+
+        StatusBanner = $"Querying fastboot variables from {dev.TransportSerial}...";
+        var vars = await _fastboot.GetAllVariablesAsync(dev.TransportSerial).ConfigureAwait(true);
+        FastbootVariables.Clear();
+        foreach (var (k, v) in vars.OrderBy(kv => kv.Key))
         {
-            var vars = await _fastboot.GetAllVariablesAsync(dev.TransportSerial).ConfigureAwait(true);
-            FastbootVariables.Clear();
-            foreach (var (k, v) in vars.OrderBy(kv => kv.Key))
-            {
-                FastbootVariables.Add(new PropertyRowItem(k, v, "VERIFIED"));
-            }
-            StatusBanner = $"Retrieved {FastbootVariables.Count} variables from {dev.TransportSerial}.";
+            FastbootVariables.Add(new PropertyRowItem(k, v, "VERIFIED"));
         }
-        finally
-        {
-            IsBusy = false;
-        }
+        StatusBanner = $"Retrieved {FastbootVariables.Count} variables from {dev.TransportSerial} ({dev.ActiveConnectionMode}).";
     }
 
     private async Task SwitchSlotAsync(string slot)
     {
-        var dev = _discovery.RequireExplicitlySelectedDevice();
-        if (string.IsNullOrWhiteSpace(dev.TransportSerial)) return;
-        IsBusy = true;
-        try
+        var dev = await _discovery.WaitForDeviceAsync(
+            $"Set Active Slot ({slot.ToUpperInvariant()})",
+            [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        if (string.IsNullOrWhiteSpace(dev.TransportSerial))
+            return;
+
+        if (dev.BootloaderState.Value != BootloaderLockState.Unlocked)
         {
-            var res = await _fastboot.SetActiveSlotAsync(dev.TransportSerial, slot).ConfigureAwait(true);
-            var verify = await _fastboot.GetVariableAsync(dev.TransportSerial, "current-slot").ConfigureAwait(true);
-            StatusBanner = res.Succeeded
-                ? $"Verified active slot: current-slot={verify ?? slot}"
-                : $"Slot switch rejected: {res.StandardError}";
+            StatusBanner = "Slot switching blocked: target bootloader is Locked.";
+            return;
         }
-        finally
-        {
-            IsBusy = false;
-        }
+
+        StatusBanner = $"Switching active slot to '{slot}' on {dev.TransportSerial}...";
+        var res = await _fastboot.SetActiveSlotAsync(dev.TransportSerial, slot).ConfigureAwait(true);
+        var verify = await _fastboot.GetVariableAsync(dev.TransportSerial, "current-slot").ConfigureAwait(true);
+        StatusBanner = res.Succeeded
+            ? $"Verified active slot: current-slot={verify ?? slot}"
+            : $"Slot switch rejected: {res.StandardError}";
     }
 
     private async Task RebootAsync(string mode)
     {
-        var dev = _discovery.RequireExplicitlySelectedDevice();
-        if (string.IsNullOrWhiteSpace(dev.TransportSerial)) return;
+        var dev = await _discovery.WaitForDeviceAsync(
+            $"Fastboot Reboot ({mode})",
+            [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        if (string.IsNullOrWhiteSpace(dev.TransportSerial))
+            return;
+
+        StatusBanner = $"Dispatching fastboot reboot ({mode}) to {dev.TransportSerial}...";
         var res = await _fastboot.RebootAsync(dev.TransportSerial, mode).ConfigureAwait(true);
-        StatusBanner = res.Succeeded ? $"Dispatched fastboot reboot ({mode})." : res.StandardError;
+        if (!res.Succeeded)
+        {
+            StatusBanner = res.StandardError;
+            return;
+        }
+
+        ConnectionMode[]? targetModes = mode switch
+        {
+            "bootloader" => [ConnectionMode.FastbootBootloader],
+            "fastbootd" => [ConnectionMode.FastbootdUserspace],
+            _ => null
+        };
+
+        if (targetModes is not null)
+        {
+            try
+            {
+                var reenum = await _discovery.WaitForDeviceAsync(
+                    $"Re-enumeration in {mode}",
+                    targetModes,
+                    TimeSpan.FromSeconds(25),
+                    CreateWaitProgressCallback()).ConfigureAwait(true);
+                StatusBanner = $"Device ready in {reenum.ActiveConnectionMode} ({reenum.TransportSerial}).";
+            }
+            catch (Exception)
+            {
+                StatusBanner = $"Dispatched fastboot reboot ({mode}). Re-enumeration wait timed out — check device screen and WinUSB driver.";
+            }
+        }
+        else
+        {
+            StatusBanner = $"Dispatched fastboot reboot ({mode}).";
+        }
     }
 }

@@ -16,14 +16,14 @@
       <ColumnDefinition Width="*" />
     </Grid.ColumnDefinitions>
 
-    <!-- LEFT SIDEBAR: 18-PAGE NAVIGATION -->
+    <!-- LEFT SIDEBAR: 19-PAGE NAVIGATION -->
     <Border Grid.Column="0" Background="{StaticResource SidebarBackgroundBrush}" BorderBrush="{StaticResource SubtleBorderBrush}" BorderThickness="0,0,1,0">
       <DockPanel>
         <!-- Brand Header -->
         <Border DockPanel.Dock="Top" Padding="18,16" BorderBrush="{StaticResource SubtleBorderBrush}" BorderThickness="0,0,0,1">
           <StackPanel>
             <TextBlock Text="TRANSSIONLAB" Foreground="{StaticResource AccentCyanBrush}" FontWeight="Bold" FontSize="15" />
-            <TextBlock Text="Universal Servicing Suite v1.0" Foreground="{StaticResource SecondaryTextBrush}" FontSize="11.5" Margin="0,2,0,0" />
+            <TextBlock Text="Universal Servicing Suite v1.2" Foreground="{StaticResource SecondaryTextBrush}" FontSize="11.5" Margin="0,2,0,0" />
             <Border Background="#064E3B" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" Margin="0,6,0,0">
               <TextBlock Text="OFFLINE-FIRST • VERIFIED" Foreground="#6EE7B7" FontSize="10" FontWeight="Bold" />
             </Border>
@@ -82,6 +82,7 @@
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
@@ -101,13 +102,43 @@
 
           <StackPanel>
             <TextBlock Text="{Binding CurrentPage.PageTitle}" Foreground="{StaticResource PrimaryTextBrush}" FontSize="18" FontWeight="Bold" />
-            <TextBlock Text="{Binding GlobalConnectionHeadline}" Foreground="{StaticResource AccentCyanBrush}" FontSize="12" />
+            <TextBlock Text="{Binding GlobalConnectionHeadline}" Foreground="{StaticResource AccentCyanBrush}" FontSize="12" TextTrimming="CharacterEllipsis" />
           </StackPanel>
         </DockPanel>
       </Border>
 
-      <!-- EXPLICIT MULTI-DEVICE SELECTION MANDATORY WARNING BANNER -->
+      <!-- LIVE 'WAITING FOR DEVICE...' CANCELLABLE ACTIVITY STRIP -->
       <Border Grid.Row="1"
+              Background="#0C4A6E"
+              BorderBrush="{StaticResource AccentCyanBrush}"
+              BorderThickness="0,0,0,1"
+              Padding="20,9"
+              Visibility="{Binding IsWaitingForDevice, Converter={StaticResource BoolToVis}}">
+        <DockPanel>
+          <Button DockPanel.Dock="Right"
+                  Content="Cancel Waiting"
+                  Command="{Binding CancelWaitingCommand}"
+                  Style="{StaticResource DangerButtonStyle}"
+                  Padding="12,4"
+                  Margin="12,0,0,0" />
+          <ProgressBar DockPanel.Dock="Right"
+                       Width="130"
+                       Height="7"
+                       IsIndeterminate="True"
+                       VerticalAlignment="Center"
+                       Background="#082F49"
+                       Foreground="{StaticResource AccentCyanBrush}" />
+          <TextBlock Text="{Binding WaitingBannerMessage}"
+                     Foreground="#E0F2FE"
+                     FontWeight="SemiBold"
+                     FontSize="12.5"
+                     VerticalAlignment="Center"
+                     TextWrapping="Wrap" />
+        </DockPanel>
+      </Border>
+
+      <!-- EXPLICIT MULTI-DEVICE SELECTION MANDATORY WARNING BANNER -->
+      <Border Grid.Row="2"
               Background="#78350F"
               BorderBrush="#F59E0B"
               BorderThickness="0,0,0,1"
@@ -119,7 +150,7 @@
       </Border>
 
       <!-- MAIN SCROLLABLE PAGE CONTENT -->
-      <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20,16">
+      <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20,16">
         <StackPanel>
           <!-- Page Status & Busy Progress Strip -->
           <Border Background="#111827" BorderBrush="{StaticResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,14">
@@ -140,7 +171,7 @@
       </ScrollViewer>
 
       <!-- BOTTOM LIVE TELEMETRY STATUS BAR -->
-      <Border Grid.Row="3" Background="#0F1623" BorderBrush="{StaticResource SubtleBorderBrush}" BorderThickness="0,1,0,0" Padding="18,7">
+      <Border Grid.Row="4" Background="#0F1623" BorderBrush="{StaticResource SubtleBorderBrush}" BorderThickness="0,1,0,0" Padding="18,7">
         <DockPanel>
           <Button DockPanel.Dock="Right"
                   Content="Open Live Logs (#17)"

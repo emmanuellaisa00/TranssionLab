@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using TranssionLab.Core.Enums;
 using TranssionLab.Core.Exceptions;
 using TranssionLab.Core.Interfaces;
@@ -6,12 +7,13 @@ using TranssionLab.Core.Models;
 namespace TranssionLab.Protocols.Discovery;
 
 /// <summary>
-/// Unified device connection discovery & correlation engine (Sections 2 & 3).
+/// Unified device connection discovery, live "Waiting for device..." engine & correlation service (Sections 2 & 3).
 /// Enforces:
 /// 1) Explicit selection whenever multiple devices are connected (never silently chooses one).
 /// 2) Strict provenance (Detected vs Inferred vs Verified) — never infers exact phone model from chipset alone.
+/// 3) Real-time cancellable "Waiting for device..." polling across ADB, Fastboot, Fastbootd, Recovery, Sideload, BROM, Unisoc, META & DIAG.
 /// </summary>
-public sealed class DeviceDiscoveryProvider : IDeviceDiscoveryProvider
+public sealed class DeviceDiscoveryProvider : IDeviceDiscoveryProvider, IDisposable
 {
     private readonly IUsbInterfaceProvider _usbProvider;
     private readonly IAdbProvider _adbProvider;
@@ -21,10 +23,18 @@ public sealed class DeviceDiscoveryProvider : IDeviceDiscoveryProvider
     private readonly IStructuredLogger _logger;
 
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _refreshSemaphore = new(1, 1);
     private List<ConnectedDeviceSnapshot> _connectedDevices = new();
     private string? _explicitSelectedKey;
+    private CancellationTokenSource? _activeWaitCts;
+    private string? _waitingStatusMessage;
+
+    public TimeSpan DefaultWaitTimeout { get; set; } = TimeSpan.FromSeconds(45);
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromMilliseconds(850);
+    public TimeSpan VendorPollInterval { get; set; } = TimeSpan.FromMilliseconds(400);
 
     public event EventHandler? InventoryChanged;
+    public event EventHandler<string?>? WaitingStatusChanged;
 
     public DeviceDiscoveryProvider(
         IUsbInterfaceProvider usbProvider,
@@ -40,6 +50,65 @@ public sealed class DeviceDiscoveryProvider : IDeviceDiscoveryProvider
         _profileRepo = profileRepo;
         _capabilityService = capabilityService;
         _logger = logger;
+
+        _usbProvider.UsbDeviceEvent += OnUsbDeviceTopologyEvent;
+    }
+
+    private async void OnUsbDeviceTopologyEvent(object? sender, UsbConnectionHistoryEvent e)
+    {
+        try
+        {
+            await RefreshInventoryAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("DeviceDiscovery", "BackgroundUsbSync", ex.Message);
+        }
+    }
+
+    public bool IsWaitingForDevice
+    {
+        get { lock (_gate) return !string.IsNullOrEmpty(_waitingStatusMessage); }
+    }
+
+    public string? WaitingStatusMessage
+    {
+        get { lock (_gate) return _waitingStatusMessage; }
+    }
+
+    private void UpdateWaitingStatus(string? message)
+    {
+        lock (_gate)
+        {
+            _waitingStatusMessage = message;
+        }
+
+        try
+        {
+            WaitingStatusChanged?.Invoke(this, message);
+        }
+        catch
+        {
+            // Never allow UI subscriber error to break transport polling
+        }
+    }
+
+    public void CancelActiveWait()
+    {
+        CancellationTokenSource? cts;
+        lock (_gate)
+        {
+            cts = _activeWaitCts;
+        }
+
+        try
+        {
+            cts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already completed
+        }
     }
 
     public IReadOnlyList<ConnectedDeviceSnapshot> ConnectedDevices
@@ -121,74 +190,340 @@ public sealed class DeviceDiscoveryProvider : IDeviceDiscoveryProvider
         }
     }
 
-    public async Task<IReadOnlyList<ConnectedDeviceSnapshot>> RefreshInventoryAsync(CancellationToken ct = default)
+    public async Task<ConnectedDeviceSnapshot> WaitForDeviceAsync(
+        string activityName,
+        IReadOnlyCollection<ConnectionMode>? acceptedModes = null,
+        TimeSpan? timeout = null,
+        Action<string>? onProgress = null,
+        CancellationToken ct = default)
     {
-        // Trigger tool checks and enumerations concurrently
-        var usbTask = _usbProvider.EnumerateUsbDevicesAsync(ct);
-        var adbTask = _adbProvider.ListDevicesAsync(ct);
-        var fbTask = _fastbootProvider.ListDevicesAsync(ct);
+        ArgumentException.ThrowIfNullOrWhiteSpace(activityName);
 
-        await Task.WhenAll(usbTask, adbTask, fbTask).ConfigureAwait(false);
+        var maxWait = timeout ?? DefaultWaitTimeout;
+        var modeDesc = FormatAcceptedModes(acceptedModes);
 
-        var usbList = usbTask.Result;
-        var adbList = adbTask.Result;
-        var fbList = fbTask.Result;
-
-        var snapshots = new List<ConnectedDeviceSnapshot>();
-        var matchedUsbIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // 1. Correlate ADB / Recovery / Sideload endpoints
-        foreach (var adb in adbList)
+        // Quick check against current cached state first when already connected in target mode
+        if (TryMatchCurrentOrThrowAmbiguous(acceptedModes, out var immediateMatch))
         {
-            var matchingUsb = usbList.FirstOrDefault(u =>
-                !string.IsNullOrWhiteSpace(u.SerialNumber) &&
-                string.Equals(u.SerialNumber, adb.Serial, StringComparison.OrdinalIgnoreCase));
-
-            if (matchingUsb is not null)
-            {
-                matchedUsbIds.Add(matchingUsb.InstanceId);
-            }
-
-            var snap = await BuildAdbSnapshotAsync(adb, matchingUsb, ct).ConfigureAwait(false);
-            snapshots.Add(EnrichSupportedOps(snap));
+            return immediateMatch!;
         }
 
-        // 2. Correlate Fastboot / Fastbootd endpoints
-        foreach (var fb in fbList)
-        {
-            var matchingUsb = usbList.FirstOrDefault(u =>
-                !string.IsNullOrWhiteSpace(u.SerialNumber) &&
-                string.Equals(u.SerialNumber, fb.Serial, StringComparison.OrdinalIgnoreCase));
-
-            if (matchingUsb is not null)
-            {
-                matchedUsbIds.Add(matchingUsb.InstanceId);
-            }
-
-            var snap = await BuildFastbootSnapshotAsync(fb, matchingUsb, ct).ConfigureAwait(false);
-            snapshots.Add(EnrichSupportedOps(snap));
-        }
-
-        // 3. Remaining USB-only interfaces (MediaTek BROM/Preloader/META, Unisoc Download/DIAG, Qualcomm DIAG, missing-driver fastboot/ADB)
-        foreach (var usb in usbList.Where(u => !matchedUsbIds.Contains(u.InstanceId)))
-        {
-            var snap = BuildUsbOnlySnapshot(usb);
-            snapshots.Add(EnrichSupportedOps(snap));
-        }
-
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         lock (_gate)
         {
-            _connectedDevices = snapshots;
-            if (_explicitSelectedKey is not null &&
-                !_connectedDevices.Any(d => string.Equals(d.DeviceKey, _explicitSelectedKey, StringComparison.OrdinalIgnoreCase)))
-            {
-                // Previously selected device disconnected; clear selection so a newly attached second device is never silently chosen
-                _explicitSelectedKey = null;
-            }
+            _activeWaitCts = linkedCts;
         }
 
-        InventoryChanged?.Invoke(this, EventArgs.Empty);
-        return snapshots;
+        var sw = Stopwatch.StartNew();
+        var initialMsg = BuildWaitingMessage(activityName, modeDesc, SelectedDevice, 0, maxWait);
+        UpdateWaitingStatus(initialMsg);
+        onProgress?.Invoke(initialMsg);
+        _logger.LogInfo("DeviceDiscovery", $"Waiting for device ({activityName})", $"Expected mode(s): {modeDesc}, Timeout: {maxWait.TotalSeconds:F0}s");
+
+        try
+        {
+            while (true)
+            {
+                linkedCts.Token.ThrowIfCancellationRequested();
+
+                await RefreshInventoryAsync(linkedCts.Token).ConfigureAwait(false);
+
+                if (TryMatchCurrentOrThrowAmbiguous(acceptedModes, out var matched))
+                {
+                    _logger.LogInfo(
+                        "DeviceDiscovery",
+                        $"Device ready for '{activityName}': {matched!.DeviceKey} ({matched.ActiveConnectionMode})",
+                        $"Elapsed wait: {sw.Elapsed.TotalSeconds:F1}s",
+                        matched.DeviceKey);
+                    return matched;
+                }
+
+                if (sw.Elapsed >= maxWait)
+                {
+                    var current = SelectedDevice;
+                    var currentHint = current is not null
+                        ? $" Device '{current.DeviceKey}' is currently in '{current.ActiveConnectionMode}' ({current.AuthorizationStatus})."
+                        : " No matching USB/ADB/Fastboot endpoint appeared.";
+
+                    throw new ServicingException(
+                        "DEVICE_WAIT_TIMEOUT",
+                        $"Timed out after {maxWait.TotalSeconds:F0}s waiting for device in {modeDesc} for '{activityName}'.{currentHint}");
+                }
+
+                var msg = BuildWaitingMessage(activityName, modeDesc, SelectedDevice, (int)sw.Elapsed.TotalSeconds, maxWait);
+                UpdateWaitingStatus(msg);
+                onProgress?.Invoke(msg);
+
+                await Task.Delay(PollInterval, linkedCts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("DeviceDiscovery", $"Cancelled waiting for device ({activityName})", "Wait cancelled by user or caller.");
+            throw new OperationCanceledException($"Stopped waiting for device ({activityName}).");
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_activeWaitCts, linkedCts))
+                {
+                    _activeWaitCts = null;
+                }
+            }
+            UpdateWaitingStatus(null);
+        }
+    }
+
+    public async Task<DetectedUsbDevice> WaitForVendorUsbEndpointAsync(
+        string activityName,
+        Func<DetectedUsbDevice, bool> predicate,
+        string connectionHint,
+        TimeSpan? timeout = null,
+        Action<string>? onProgress = null,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(activityName);
+        ArgumentNullException.ThrowIfNull(predicate);
+
+        var maxWait = timeout ?? DefaultWaitTimeout;
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        lock (_gate)
+        {
+            _activeWaitCts = linkedCts;
+        }
+
+        var sw = Stopwatch.StartNew();
+        bool loggedStart = false;
+
+        try
+        {
+            while (true)
+            {
+                linkedCts.Token.ThrowIfCancellationRequested();
+
+                var usbDevices = await _usbProvider.EnumerateUsbDevicesAsync(linkedCts.Token).ConfigureAwait(false);
+                var matches = usbDevices.Where(predicate).ToList();
+
+                if (matches.Count > 1)
+                {
+                    throw new AmbiguousDeviceSelectionException(matches.Count);
+                }
+
+                if (matches.Count == 1)
+                {
+                    var found = matches[0];
+                    if (loggedStart)
+                    {
+                        _logger.LogInfo(
+                            "DeviceDiscovery",
+                            $"Captured USB endpoint for '{activityName}': {found.VidPidDisplay} ({found.AssociatedComPort ?? found.InstanceId})",
+                            $"Elapsed wait: {sw.Elapsed.TotalSeconds:F1}s",
+                            found.InstanceId);
+                    }
+                    return found;
+                }
+
+                if (!loggedStart)
+                {
+                    loggedStart = true;
+                    _logger.LogInfo("DeviceDiscovery", $"Waiting for device ({activityName})", connectionHint);
+                }
+
+                if (sw.Elapsed >= maxWait)
+                {
+                    throw new ServicingException(
+                        "DEVICE_WAIT_TIMEOUT",
+                        $"Timed out after {maxWait.TotalSeconds:F0}s waiting for device ({activityName}). {connectionHint}");
+                }
+
+                var msg = $"Waiting for device... [{activityName}] — {connectionHint} ({(int)sw.Elapsed.TotalSeconds}s / {(int)maxWait.TotalSeconds}s)";
+                UpdateWaitingStatus(msg);
+                onProgress?.Invoke(msg);
+
+                await Task.Delay(VendorPollInterval, linkedCts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("DeviceDiscovery", $"Cancelled waiting for device ({activityName})", "Wait cancelled by user or caller.");
+            throw new OperationCanceledException($"Stopped waiting for device ({activityName}).");
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_activeWaitCts, linkedCts))
+                {
+                    _activeWaitCts = null;
+                }
+            }
+            UpdateWaitingStatus(null);
+        }
+    }
+
+    private bool TryMatchCurrentOrThrowAmbiguous(
+        IReadOnlyCollection<ConnectionMode>? acceptedModes,
+        out ConnectedDeviceSnapshot? matched)
+    {
+        lock (_gate)
+        {
+            if (_connectedDevices.Count > 1 &&
+                (string.IsNullOrWhiteSpace(_explicitSelectedKey) ||
+                 !_connectedDevices.Any(d => string.Equals(d.DeviceKey, _explicitSelectedKey, StringComparison.OrdinalIgnoreCase))))
+            {
+                throw new AmbiguousDeviceSelectionException(_connectedDevices.Count);
+            }
+
+            var candidate = SelectedDevice;
+            if (candidate is null)
+            {
+                matched = null;
+                return false;
+            }
+
+            if (acceptedModes is null || acceptedModes.Count == 0 || acceptedModes.Contains(candidate.ActiveConnectionMode))
+            {
+                matched = candidate;
+                return true;
+            }
+
+            matched = null;
+            return false;
+        }
+    }
+
+    private static string FormatAcceptedModes(IReadOnlyCollection<ConnectionMode>? modes)
+    {
+        if (modes is null || modes.Count == 0)
+            return "any supported USB/ADB/Fastboot mode";
+
+        return string.Join(" / ", modes.Select(m => m switch
+        {
+            ConnectionMode.AdbAuthorized => "Authorized ADB",
+            ConnectionMode.AdbSideload => "Recovery ADB Sideload",
+            ConnectionMode.Recovery => "Recovery",
+            ConnectionMode.FastbootBootloader => "Bootloader Fastboot",
+            ConnectionMode.FastbootdUserspace => "Userspace Fastbootd",
+            ConnectionMode.MediaTekBrom => "MediaTek BROM",
+            ConnectionMode.MediaTekPreloader => "MediaTek Preloader",
+            ConnectionMode.UnisocDownload => "Unisoc Download",
+            _ => m.ToString()
+        }));
+    }
+
+    private static string BuildWaitingMessage(
+        string activityName,
+        string modeDesc,
+        ConnectedDeviceSnapshot? currentDevice,
+        int elapsedSeconds,
+        TimeSpan maxWait)
+    {
+        var timerSuffix = $"({elapsedSeconds}s / {(int)maxWait.TotalSeconds}s)";
+        if (currentDevice is null)
+        {
+            return $"Waiting for device... [{activityName}] — Connect phone via USB in {modeDesc} {timerSuffix}";
+        }
+
+        if (currentDevice.ActiveConnectionMode == ConnectionMode.AdbUnauthorized)
+        {
+            return $"Waiting for device... [{activityName}] — Phone detected ({currentDevice.TransportSerial}); unlock screen and tap 'Allow USB debugging' {timerSuffix}";
+        }
+
+        return $"Waiting for device... [{activityName}] — Phone is currently in {currentDevice.ActiveConnectionMode}; awaiting {modeDesc} {timerSuffix}";
+    }
+
+    public async Task<IReadOnlyList<ConnectedDeviceSnapshot>> RefreshInventoryAsync(CancellationToken ct = default)
+    {
+        await _refreshSemaphore.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            // Trigger tool checks and enumerations concurrently
+            var usbTask = _usbProvider.EnumerateUsbDevicesAsync(ct);
+            var adbTask = _adbProvider.ListDevicesAsync(ct);
+            var fbTask = _fastbootProvider.ListDevicesAsync(ct);
+
+            await Task.WhenAll(usbTask, adbTask, fbTask).ConfigureAwait(false);
+
+            var usbList = usbTask.Result;
+            var adbList = adbTask.Result;
+            var fbList = fbTask.Result;
+
+            var snapshots = new List<ConnectedDeviceSnapshot>();
+            var matchedUsbIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // 1. Correlate ADB / Recovery / Sideload endpoints
+            foreach (var adb in adbList)
+            {
+                var matchingUsb = usbList.FirstOrDefault(u =>
+                    !string.IsNullOrWhiteSpace(u.SerialNumber) &&
+                    string.Equals(u.SerialNumber, adb.Serial, StringComparison.OrdinalIgnoreCase));
+
+                if (matchingUsb is not null)
+                {
+                    matchedUsbIds.Add(matchingUsb.InstanceId);
+                }
+
+                var snap = await BuildAdbSnapshotAsync(adb, matchingUsb, ct).ConfigureAwait(false);
+                snapshots.Add(EnrichSupportedOps(snap));
+            }
+
+            // 2. Correlate Fastboot / Fastbootd endpoints
+            foreach (var fb in fbList)
+            {
+                var matchingUsb = usbList.FirstOrDefault(u =>
+                    !string.IsNullOrWhiteSpace(u.SerialNumber) &&
+                    string.Equals(u.SerialNumber, fb.Serial, StringComparison.OrdinalIgnoreCase));
+
+                if (matchingUsb is not null)
+                {
+                    matchedUsbIds.Add(matchingUsb.InstanceId);
+                }
+
+                var snap = await BuildFastbootSnapshotAsync(fb, matchingUsb, ct).ConfigureAwait(false);
+                snapshots.Add(EnrichSupportedOps(snap));
+            }
+
+            // 3. Remaining USB-only interfaces (MediaTek BROM/Preloader/META, Unisoc Download/DIAG, Qualcomm DIAG, missing-driver fastboot/ADB)
+            foreach (var usb in usbList.Where(u => !matchedUsbIds.Contains(u.InstanceId)))
+            {
+                var snap = BuildUsbOnlySnapshot(usb);
+                snapshots.Add(EnrichSupportedOps(snap));
+            }
+
+            lock (_gate)
+            {
+                _connectedDevices = snapshots;
+                if (_explicitSelectedKey is not null &&
+                    !_connectedDevices.Any(d => string.Equals(d.DeviceKey, _explicitSelectedKey, StringComparison.OrdinalIgnoreCase)))
+                {
+                    // Previously selected device disconnected; clear selection so a newly attached second device is never silently chosen
+                    _explicitSelectedKey = null;
+                }
+            }
+
+            try
+            {
+                InventoryChanged?.Invoke(this, EventArgs.Empty);
+            }
+            catch
+            {
+                // Guard event dispatch
+            }
+
+            return snapshots;
+        }
+        finally
+        {
+            _refreshSemaphore.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _usbProvider.UsbDeviceEvent -= OnUsbDeviceTopologyEvent;
+        CancelActiveWait();
+        _refreshSemaphore.Dispose();
     }
 
     private ConnectedDeviceSnapshot EnrichSupportedOps(ConnectedDeviceSnapshot initial)

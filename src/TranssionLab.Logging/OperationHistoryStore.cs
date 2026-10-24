@@ -69,28 +69,35 @@ public static class CrashReportService
 {
     public static string WriteCrashReport(Exception exception, string sessionId, string? crashDirectory = null)
     {
-        var dir = crashDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "TranssionLab",
-            "logs",
-            "crashes");
-        Directory.CreateDirectory(dir);
+        try
+        {
+            var dir = crashDirectory ?? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "TranssionLab",
+                "logs",
+                "crashes");
+            Directory.CreateDirectory(dir);
 
-        var fileName = $"crash-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}.txt";
-        var path = Path.Combine(dir, fileName);
+            var fileName = $"crash-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}.txt";
+            var path = Path.Combine(dir, fileName);
 
-        var report = new StringBuilder()
-            .AppendLine("TRANSSIONLAB LOCAL CRASH REPORT")
-            .AppendLine($"Timestamp UTC: {DateTimeOffset.UtcNow:O}")
-            .AppendLine($"Session ID   : {sessionId}")
-            .AppendLine($"OS           : {Environment.OSVersion}")
-            .AppendLine($"Exception    : {exception.GetType().FullName}")
-            .AppendLine($"Message      : {LogRedactor.Redact(exception.Message)}")
-            .AppendLine("Stack Trace:")
-            .AppendLine(LogRedactor.Redact(exception.ToString()))
-            .ToString();
+            var report = new StringBuilder()
+                .AppendLine("TRANSSIONLAB LOCAL CRASH REPORT")
+                .AppendLine($"Timestamp UTC: {DateTimeOffset.UtcNow:O}")
+                .AppendLine($"Session ID   : {sessionId}")
+                .AppendLine($"OS           : {Environment.OSVersion}")
+                .AppendLine($"Exception    : {exception.GetType().FullName}")
+                .AppendLine($"Message      : {LogRedactor.Redact(exception.Message)}")
+                .AppendLine("Stack Trace:")
+                .AppendLine(LogRedactor.Redact(exception.ToString()))
+                .ToString();
 
-        File.WriteAllText(path, report, Encoding.UTF8);
-        return path;
+            File.WriteAllText(path, report, Encoding.UTF8);
+            return path;
+        }
+        catch
+        {
+            return "(Crash report file could not be written due to local disk permissions)";
+        }
     }
 }

@@ -163,6 +163,7 @@
           <DockPanel Margin="0,0,0,8">
             <WrapPanel DockPanel.Dock="Right">
               <Button Content="Scan Device Partitions" Command="{Binding ScanPartitionsCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" />
+              <Button Content="Load Offline Layout..." Command="{Binding LoadOfflineLayoutCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
               <Button Content="Export Table JSON" Command="{Binding ExportTableJsonCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,8,0" />
               <Button Content="Stage in Flash Manager (#14)" Command="{Binding StageSelectedInFlashManagerCommand}" Style="{StaticResource SecondaryButtonStyle}" />
             </WrapPanel>

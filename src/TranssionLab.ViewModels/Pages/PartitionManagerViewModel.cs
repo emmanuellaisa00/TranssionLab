@@ -3,13 +3,14 @@ using System.Globalization;
 using TranssionLab.Core.Enums;
 using TranssionLab.Core.Interfaces;
 using TranssionLab.Core.Models;
+using TranssionLab.Firmware;
 using TranssionLab.ViewModels.Mvvm;
 
 namespace TranssionLab.ViewModels.Pages;
 
 /// <summary>
 /// Page 13: Dedicated Partition Manager (GPT, Dynamic Super Logical Partitions,
-/// Controlled Erase, Authorized Readback, and Unlocked VBMeta Policy Control).
+/// Offline Container Layout Inspection, Controlled Erase, Authorized Readback, and Unlocked VBMeta Policy Control).
 /// </summary>
 public sealed class PartitionManagerViewModel : PageViewModelBase
 {
@@ -228,6 +229,7 @@ public sealed class PartitionManagerViewModel : PageViewModelBase
         _discovery.SelectedDevice?.BootloaderState.Value == BootloaderLockState.Unlocked;
 
     public AsyncRelayCommand ScanPartitionsCommand { get; }
+    public AsyncRelayCommand LoadOfflineLayoutCommand { get; }
     public AsyncRelayCommand ExportTableJsonCommand { get; }
     public AsyncRelayCommand ReadbackSelectedPartitionCommand { get; }
     public RelayCommand StageSelectedInFlashManagerCommand { get; }
@@ -251,11 +253,14 @@ public sealed class PartitionManagerViewModel : PageViewModelBase
         _settings = settings;
         _readbackOutputDirectory = Path.Combine(settings.Current.WorkspaceDataDirectory, "partition_backups");
 
-        ScanPartitionsCommand = new AsyncRelayCommand(ScanAsync, CanScanCurrentDevice);
-        ExportTableJsonCommand = new AsyncRelayCommand(ExportTableAsync, () => CurrentSnapshot is not null);
+        // Always enabled when not busy: automatically enters 'Waiting for device...' when unplugged!
+        ScanPartitionsCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(ScanWithWaitAsync, "Partition scan failed"));
+        LoadOfflineLayoutCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(LoadOfflineAsync, "Offline layout load failed"));
+        ExportTableJsonCommand = new AsyncRelayCommand(() => RunSafeActivityAsync(ExportTableAsync, "Partition JSON export failed"), () => CurrentSnapshot is not null);
         ReadbackSelectedPartitionCommand = new AsyncRelayCommand(
-            ReadbackSelectedAsync,
-            () => SelectedPartition is { CanReadbackInCurrentMode: true });
+            () => RunSafeActivityAsync(ReadbackSelectedAsync, "Readback blocked/failed"),
+            () => SelectedPartition is not null &&
+                  SelectedPartition.AccessPolicy is PartitionAccessPolicy.SafeFlashable or PartitionAccessPolicy.LogicalSuperRequiresFastbootd);
 
         StageSelectedInFlashManagerCommand = new RelayCommand(
             () =>
@@ -282,40 +287,40 @@ public sealed class PartitionManagerViewModel : PageViewModelBase
         });
 
         CreateLogicalCommand = new AsyncRelayCommand(
-            () => MutateLogicalAsync("create"),
+            () => RunSafeActivityAsync(() => MutateLogicalAsync("create"), "Super logical partition create failed"),
             () => IsFastbootdUnlocked &&
                   !string.IsNullOrWhiteSpace(LogicalTargetName) &&
                   long.TryParse(LogicalTargetSizeBytesText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sz) && sz >= 4096 &&
                   string.Equals(SuperConfirmationText?.Trim(), ExpectedSuperPhrase, StringComparison.Ordinal));
 
         ResizeLogicalCommand = new AsyncRelayCommand(
-            () => MutateLogicalAsync("resize"),
+            () => RunSafeActivityAsync(() => MutateLogicalAsync("resize"), "Super logical partition resize failed"),
             () => IsFastbootdUnlocked &&
                   !string.IsNullOrWhiteSpace(LogicalTargetName) &&
                   long.TryParse(LogicalTargetSizeBytesText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sz) && sz >= 4096 &&
                   string.Equals(SuperConfirmationText?.Trim(), ExpectedSuperPhrase, StringComparison.Ordinal));
 
         DeleteLogicalCommand = new AsyncRelayCommand(
-            () => MutateLogicalAsync("delete"),
+            () => RunSafeActivityAsync(() => MutateLogicalAsync("delete"), "Super logical partition delete failed"),
             () => IsFastbootdUnlocked &&
                   !string.IsNullOrWhiteSpace(LogicalTargetName) &&
                   string.Equals(SuperConfirmationText?.Trim(), ExpectedSuperPhrase, StringComparison.Ordinal));
 
         ErasePartitionCommand = new AsyncRelayCommand(
-            ExecuteSafeEraseAsync,
+            () => RunSafeActivityAsync(ExecuteSafeEraseAsync, "Erase blocked/failed"),
             () => IsFastbootAnyUnlocked &&
                   !string.IsNullOrWhiteSpace(EraseTargetName) &&
                   string.Equals(EraseConfirmationText?.Trim(), ExpectedErasePhrase, StringComparison.Ordinal));
 
         FlashVbmetaCommand = new AsyncRelayCommand(
-            ExecuteFlashVbmetaAsync,
+            () => RunSafeActivityAsync(ExecuteFlashVbmetaAsync, "VBMeta flash blocked/failed"),
             () => IsFastbootAnyUnlocked &&
                   !string.IsNullOrWhiteSpace(VbmetaPartitionName) &&
                   !string.IsNullOrWhiteSpace(VbmetaImagePath) &&
                   string.Equals(VbmetaConfirmationText?.Trim(), ExpectedVbmetaPhrase, StringComparison.Ordinal));
 
-        _discovery.InventoryChanged += (_, _) => RaiseDeviceBindings();
-        StatusBanner = "Connect in Fastboot, Fastbootd, Authorized ADB, or Recovery to inspect live GPT & Dynamic Super partitions.";
+        _discovery.InventoryChanged += (_, _) => UiInteractionBridge.RunOnUiThread(RaiseDeviceBindings);
+        StatusBanner = "Click 'Scan Device Partitions' (automatically waits for device if unplugged) or 'Load Offline Layout' to inspect Scatter / PAC / payload.bin / super.img.";
     }
 
     public override Task OnNavigatedToAsync(CancellationToken ct = default)
@@ -324,13 +329,6 @@ public sealed class PartitionManagerViewModel : PageViewModelBase
         return Task.CompletedTask;
     }
 
-    private bool CanScanCurrentDevice() =>
-        _discovery.SelectedDevice?.ActiveConnectionMode is
-            ConnectionMode.FastbootBootloader or
-            ConnectionMode.FastbootdUserspace or
-            ConnectionMode.AdbAuthorized or
-            ConnectionMode.Recovery;
-
     private void RaiseDeviceBindings()
     {
         OnPropertyChanged(nameof(ExpectedSuperPhrase));
@@ -338,7 +336,6 @@ public sealed class PartitionManagerViewModel : PageViewModelBase
         OnPropertyChanged(nameof(ExpectedVbmetaPhrase));
         OnPropertyChanged(nameof(IsFastbootdUnlocked));
         OnPropertyChanged(nameof(IsFastbootAnyUnlocked));
-        ScanPartitionsCommand.RaiseCanExecuteChanged();
         RaiseActionCommands();
     }
 
@@ -353,24 +350,36 @@ public sealed class PartitionManagerViewModel : PageViewModelBase
         FlashVbmetaCommand.RaiseCanExecuteChanged();
     }
 
-    private async Task ScanAsync()
+    private async Task ScanWithWaitAsync()
     {
-        IsBusy = true;
-        try
-        {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
-            CurrentSnapshot = await _partitionManager.ScanDevicePartitionsAsync(dev).ConfigureAwait(true);
-            ApplyFilter();
-            StatusBanner = $"Enumerated {CurrentSnapshot.TotalPartitions} partition(s) ({CurrentSnapshot.LogicalPartitionsCount} logical super, {CurrentSnapshot.ProtectedPartitionsCount} protected/blocked) on {CurrentSnapshot.TransportSerial}.";
-        }
-        catch (Exception ex)
-        {
-            StatusBanner = $"Partition scan failed: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        var dev = await _discovery.WaitForDeviceAsync(
+            "Scan Device Partitions",
+            [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace, ConnectionMode.AdbAuthorized, ConnectionMode.Recovery],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        StatusBanner = $"Enumerating live partition table on {dev.TransportSerial} ({dev.ActiveConnectionMode})...";
+        CurrentSnapshot = await _partitionManager.ScanDevicePartitionsAsync(dev).ConfigureAwait(true);
+        ApplyFilter();
+        StatusBanner = $"Enumerated {CurrentSnapshot.TotalPartitions} partition(s) ({CurrentSnapshot.LogicalPartitionsCount} logical super, {CurrentSnapshot.ProtectedPartitionsCount} protected/blocked) on {CurrentSnapshot.TransportSerial}.";
+    }
+
+    public async Task LoadOfflineFromPathAsync(string filePath)
+    {
+        StatusBanner = $"Loading offline partition layout from '{Path.GetFileName(filePath)}'...";
+        CurrentSnapshot = await _partitionManager.LoadOfflinePartitionTableAsync(filePath).ConfigureAwait(true);
+        ApplyFilter();
+        StatusBanner = $"Loaded {CurrentSnapshot.TotalPartitions} partition(s) ({CurrentSnapshot.LogicalPartitionsCount} logical super, {CurrentSnapshot.ProtectedPartitionsCount} protected/blocked) from '{Path.GetFileName(filePath)}'.";
+    }
+
+    private async Task LoadOfflineAsync()
+    {
+        var picked = UiInteractionBridge.PickOpenFile?.Invoke(
+            "Select Firmware Layout (Scatter / Unisoc .pac / payload.bin / super.img / OTA .zip / .tar)",
+            "Supported Containers (*.txt;*.xml;*.pac;*.bin;*.img;*.zip;*.tar;*.gz;*.tgz)|*.txt;*.xml;*.pac;*.bin;*.img;*.zip;*.tar;*.gz;*.tgz|All Files (*.*)|*.*");
+        if (string.IsNullOrWhiteSpace(picked))
+            return;
+
+        await LoadOfflineFromPathAsync(picked).ConfigureAwait(true);
     }
 
     public void ApplyFilter()
@@ -400,15 +409,17 @@ public sealed class PartitionManagerViewModel : PageViewModelBase
     private async Task ExportTableAsync()
     {
         if (CurrentSnapshot is null) return;
+        var safeSerial = HashAndBinaryHelpers.SanitizeFileNameComponent(CurrentSnapshot.TransportSerial, "device");
+        var defaultFileName = $"partitions-{safeSerial}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.json";
         var defaultPath = Path.Combine(
             _settings.Current.WorkspaceDataDirectory,
             "exports",
-            $"partitions-{CurrentSnapshot.TransportSerial}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.json");
+            defaultFileName);
 
         var chosen = UiInteractionBridge.PickSaveFile?.Invoke(
             "Export Device Partition Table Snapshot",
             "JSON Files (*.json)|*.json",
-            Path.GetFileName(defaultPath)) ?? defaultPath;
+            defaultFileName) ?? defaultPath;
 
         var saved = await _partitionManager.ExportPartitionTableJsonAsync(CurrentSnapshot, chosen).ConfigureAwait(true);
         StatusBanner = $"Exported partition table JSON to '{saved}'.";
@@ -417,102 +428,74 @@ public sealed class PartitionManagerViewModel : PageViewModelBase
     private async Task ReadbackSelectedAsync()
     {
         if (SelectedPartition is null) return;
-        IsBusy = true;
-        try
-        {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
-            LastModificationResult = await _partitionManager.BackupPartitionViaAdbAsync(
-                dev,
-                SelectedPartition,
-                ReadbackOutputDirectory).ConfigureAwait(true);
-            StatusBanner = LastModificationResult.Summary;
-        }
-        catch (Exception ex)
-        {
-            StatusBanner = $"Readback blocked/failed: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        var dev = await _discovery.WaitForDeviceAsync(
+            $"Readback Partition ({SelectedPartition.PartitionName})",
+            [ConnectionMode.AdbAuthorized, ConnectionMode.Recovery],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        StatusBanner = $"Reading back '{SelectedPartition.PartitionName}' from {dev.TransportSerial} and computing SHA-256...";
+        LastModificationResult = await _partitionManager.BackupPartitionViaAdbAsync(
+            dev,
+            SelectedPartition,
+            ReadbackOutputDirectory).ConfigureAwait(true);
+        StatusBanner = LastModificationResult.Summary;
     }
 
     private async Task MutateLogicalAsync(string kind)
     {
-        IsBusy = true;
-        try
-        {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
-            long.TryParse(LogicalTargetSizeBytesText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes);
+        var dev = await _discovery.WaitForDeviceAsync(
+            $"Dynamic Super Logical Partition ({kind})",
+            [ConnectionMode.FastbootdUserspace],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
 
-            LastModificationResult = kind switch
-            {
-                "create" => await _partitionManager.CreateLogicalPartitionAsync(dev, LogicalTargetName, bytes, SuperConfirmationText).ConfigureAwait(true),
-                "resize" => await _partitionManager.ResizeLogicalPartitionAsync(dev, LogicalTargetName, bytes, SuperConfirmationText).ConfigureAwait(true),
-                _ => await _partitionManager.DeleteLogicalPartitionAsync(dev, LogicalTargetName, SuperConfirmationText).ConfigureAwait(true)
-            };
+        long.TryParse(LogicalTargetSizeBytesText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes);
 
-            SuperConfirmationText = string.Empty;
-            StatusBanner = LastModificationResult.Summary;
-            CurrentSnapshot = await _partitionManager.ScanDevicePartitionsAsync(dev).ConfigureAwait(true);
-            ApplyFilter();
-        }
-        catch (Exception ex)
+        StatusBanner = $"Executing fastbootd '{kind}-logical-partition' for '{LogicalTargetName}' on {dev.TransportSerial}...";
+        LastModificationResult = kind switch
         {
-            StatusBanner = $"Super logical partition operation failed: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+            "create" => await _partitionManager.CreateLogicalPartitionAsync(dev, LogicalTargetName, bytes, SuperConfirmationText).ConfigureAwait(true),
+            "resize" => await _partitionManager.ResizeLogicalPartitionAsync(dev, LogicalTargetName, bytes, SuperConfirmationText).ConfigureAwait(true),
+            _ => await _partitionManager.DeleteLogicalPartitionAsync(dev, LogicalTargetName, SuperConfirmationText).ConfigureAwait(true)
+        };
+
+        SuperConfirmationText = string.Empty;
+        StatusBanner = LastModificationResult.Summary;
+        CurrentSnapshot = await _partitionManager.ScanDevicePartitionsAsync(dev).ConfigureAwait(true);
+        ApplyFilter();
     }
 
     private async Task ExecuteSafeEraseAsync()
     {
-        IsBusy = true;
-        try
-        {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
-            LastModificationResult = await _partitionManager.ErasePartitionAsync(
-                dev,
-                EraseTargetName,
-                EraseConfirmationText).ConfigureAwait(true);
-            EraseConfirmationText = string.Empty;
-            StatusBanner = LastModificationResult.Summary;
-        }
-        catch (Exception ex)
-        {
-            StatusBanner = $"Erase blocked/failed: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        var dev = await _discovery.WaitForDeviceAsync(
+            $"Controlled Erase ({EraseTargetName})",
+            [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        StatusBanner = $"Erasing '{EraseTargetName}' on {dev.TransportSerial}...";
+        LastModificationResult = await _partitionManager.ErasePartitionAsync(
+            dev,
+            EraseTargetName,
+            EraseConfirmationText).ConfigureAwait(true);
+        EraseConfirmationText = string.Empty;
+        StatusBanner = LastModificationResult.Summary;
     }
 
     private async Task ExecuteFlashVbmetaAsync()
     {
-        IsBusy = true;
-        try
-        {
-            var dev = _discovery.RequireExplicitlySelectedDevice();
-            LastModificationResult = await _partitionManager.FlashVbmetaWithPolicyAsync(
-                dev,
-                VbmetaPartitionName,
-                VbmetaImagePath,
-                DisableVerity,
-                DisableVerification,
-                VbmetaConfirmationText).ConfigureAwait(true);
-            VbmetaConfirmationText = string.Empty;
-            StatusBanner = LastModificationResult.Summary;
-        }
-        catch (Exception ex)
-        {
-            StatusBanner = $"VBMeta flash blocked/failed: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        var dev = await _discovery.WaitForDeviceAsync(
+            $"Flash Verified VBMeta ({VbmetaPartitionName})",
+            [ConnectionMode.FastbootBootloader, ConnectionMode.FastbootdUserspace],
+            onProgress: CreateWaitProgressCallback()).ConfigureAwait(true);
+
+        StatusBanner = $"Flashing verified AVB0 image '{Path.GetFileName(VbmetaImagePath)}' to '{VbmetaPartitionName}'...";
+        LastModificationResult = await _partitionManager.FlashVbmetaWithPolicyAsync(
+            dev,
+            VbmetaPartitionName,
+            VbmetaImagePath,
+            DisableVerity,
+            DisableVerification,
+            VbmetaConfirmationText).ConfigureAwait(true);
+        VbmetaConfirmationText = string.Empty;
+        StatusBanner = LastModificationResult.Summary;
     }
 }

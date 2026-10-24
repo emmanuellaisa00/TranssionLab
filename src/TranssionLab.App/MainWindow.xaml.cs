@@ -11,7 +11,21 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         Loaded += async (_, _) =>
         {
-            await viewModel.GlobalScanDevicesCommand.ExecuteAsync().ConfigureAwait(true);
+            try
+            {
+                await viewModel.GlobalScanDevicesCommand.ExecuteAsync().ConfigureAwait(true);
+            }
+            catch
+            {
+                // Startup scan errors are already captured in StatusBanner and StructuredLogger
+            }
+        };
+        Closing += (_, _) =>
+        {
+            if (viewModel.CancelWaitingCommand.CanExecute(null))
+            {
+                viewModel.CancelWaitingCommand.Execute(null);
+            }
         };
     }
 }

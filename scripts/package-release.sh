@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-VERSION="${1:-1.1.0}"
+VERSION="${1:-1.2.0}"
 RID="win-x64"
 PKG_NAME="TranssionLab-v${VERSION}-${RID}"
 STAGE_DIR="/tmp/transsionlab_publish_${RID}"

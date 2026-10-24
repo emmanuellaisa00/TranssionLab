@@ -57,6 +57,35 @@ public static class HashAndBinaryHelpers
         return ProtectedNvAndSecurityNames.Contains(baseName);
     }
 
+    public static string SanitizeFileNameComponent(string? raw, string fallback = "device")
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return fallback;
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var sb = new StringBuilder(raw.Length);
+        foreach (var ch in raw.Trim())
+        {
+            sb.Append(Array.IndexOf(invalid, ch) >= 0 || ch is ':' or '\\' or '/' or ' ' ? '_' : ch);
+        }
+
+        var result = sb.ToString().Trim('_');
+        return string.IsNullOrWhiteSpace(result) ? fallback : result;
+    }
+
+    public static void EnsureParentDirectoryExists(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return;
+
+        var fullPath = Path.GetFullPath(filePath);
+        var dir = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+    }
+
     public static string FormatBytesHuman(long? bytes)
     {
         if (!bytes.HasValue || bytes.Value < 0)
@@ -169,9 +198,11 @@ public static class HashAndBinaryHelpers
 
         if (read >= 16)
         {
-            var textHead = Encoding.UTF8.GetString(header[..Math.Min(read, 1024)]);
+            var textHead = Encoding.UTF8.GetString(header[..Math.Min(read, 4096)]);
             if (textHead.Contains("partition_index:", StringComparison.OrdinalIgnoreCase) &&
-                textHead.Contains("physical_start_addr:", StringComparison.OrdinalIgnoreCase))
+                (textHead.Contains("physical_start_addr:", StringComparison.OrdinalIgnoreCase) ||
+                 textHead.Contains("partition_size:", StringComparison.OrdinalIgnoreCase) ||
+                 textHead.Contains("MTK_PLATFORM_CFG", StringComparison.OrdinalIgnoreCase)))
             {
                 return (FirmwareFormatKind.MediaTekScatterText, "MediaTek Scatter Descriptor (YAML/Text)");
             }

@@ -194,16 +194,22 @@ public sealed class StructuredLogger : IStructuredLogger
                 sb.AppendLine($"  Verification ({entry.DurationMs ?? 0} ms): {entry.VerificationResult}");
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(filePath))!);
-        await File.WriteAllTextAsync(filePath, sb.ToString(), Encoding.UTF8, ct).ConfigureAwait(false);
+        var fullPath = Path.GetFullPath(filePath);
+        var parentDir = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(parentDir))
+            Directory.CreateDirectory(parentDir);
+        await File.WriteAllTextAsync(fullPath, sb.ToString(), Encoding.UTF8, ct).ConfigureAwait(false);
     }
 
     public async Task ExportJsonAsync(string filePath, CancellationToken ct = default)
     {
         var entries = GetArchivedSessionEntries();
         var json = JsonSerializer.Serialize(entries, JsonPrettyOpts);
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(filePath))!);
-        await File.WriteAllTextAsync(filePath, json, Encoding.UTF8, ct).ConfigureAwait(false);
+        var fullPath = Path.GetFullPath(filePath);
+        var parentDir = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrWhiteSpace(parentDir))
+            Directory.CreateDirectory(parentDir);
+        await File.WriteAllTextAsync(fullPath, json, Encoding.UTF8, ct).ConfigureAwait(false);
     }
 
     public string BuildTroubleshootingBundle(
